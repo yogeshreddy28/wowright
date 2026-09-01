@@ -1,0 +1,1 @@
+import{SiteHeader}from'./site-header';import{SiteFooter}from'./site-footer';import{ChatWidget}from'./chat-widget';export function AppShell({children}:{children:React.ReactNode}){return<><SiteHeader/><main>{children}</main><SiteFooter/><ChatWidget/></>}

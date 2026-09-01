@@ -1,0 +1,1 @@
+import{OrderSuccessView}from'@/components/order-success-view';export default async function Page({params}:{params:Promise<{orderId:string}>}){const{orderId}=await params;return<OrderSuccessView orderId={orderId}/>}
