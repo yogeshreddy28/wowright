@@ -1,1 +1,35 @@
-import{env}from'cloudflare:workers';import{createHumanHandoffURL}from'@/lib/services/whatsapp';export async function POST(r:Request){const d=await r.json()as{sessionId:string;path?:string;cart?:{name:string;selections:Record<string,unknown>}[];messages?:{text:string}[]};const summary=d.messages?.slice(-3).map(m=>m.text).join(' / ');const first=d.cart?.[0];await env.DB.prepare('INSERT INTO analytics_events (id,session_id,name,path,metadata,created_at) VALUES (?,?,?,?,?,?)').bind(crypto.randomUUID(),d.sessionId,'whatsapp_clicked',d.path||null,JSON.stringify({handoff:'human'}),new Date().toISOString()).run();return Response.json({url:createHumanHandoffURL({sessionId:d.sessionId,product:first?.name,selections:first?.selections,summary})})}
+import { env } from 'cloudflare:workers';
+import { createHumanHandoffURL } from '@/lib/services/whatsapp';
+export async function POST(r: Request) {
+  const d = (await r.json()) as {
+    sessionId: string;
+    path?: string;
+    cart?: { name: string; selections: Record<string, unknown> }[];
+    messages?: { text: string }[];
+  };
+  const summary = d.messages
+    ?.slice(-3)
+    .map((m) => m.text)
+    .join(' / ');
+  const first = d.cart?.[0];
+  await env.DB.prepare(
+    'INSERT INTO analytics_events (id,session_id,name,path,metadata,created_at) VALUES (?,?,?,?,?,?)',
+  )
+    .bind(
+      crypto.randomUUID(),
+      d.sessionId,
+      'whatsapp_clicked',
+      d.path || null,
+      JSON.stringify({ handoff: 'human' }),
+      new Date().toISOString(),
+    )
+    .run();
+  return Response.json({
+    url: createHumanHandoffURL({
+      sessionId: d.sessionId,
+      product: first?.name,
+      selections: first?.selections,
+      summary,
+    }),
+  });
+}

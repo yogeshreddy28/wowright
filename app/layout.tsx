@@ -2,20 +2,68 @@ import type { Metadata } from 'next';
 import { DM_Sans, Lora } from 'next/font/google';
 import './globals.css';
 import { StoreProvider } from '@/components/store-provider';
+import { CompanionProvider } from '@/components/wow-companion/companion-context';
+import { AnalyticsProvider } from '@/components/analytics-provider';
 
 const sans = DM_Sans({ variable: '--font-sans', subsets: ['latin'] });
 const serif = Lora({ variable: '--font-serif', subsets: ['latin'] });
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.SITE_URL || 'http://localhost:3000'),
-  title: { default: 'MorrowMade — Ideas, Made Real.', template: '%s · MorrowMade' },
-  description: 'Personalized 3D printed products designed and made for you in Bangalore.',
+  title: {
+    default: 'WOW RIGHT — Ideas, Made Real.',
+    template: '%s · WOW RIGHT',
+  },
+  description:
+    'Personalized 3D printed products made to turn your ideas, memories and imagination into something you can hold.',
   alternates: { canonical: '/' },
-  openGraph: { type: 'website', locale: 'en_IN', siteName: 'MorrowMade', title: 'Ideas, Made Real.', description: 'Personalized 3D printed products designed and made for you.' },
-  twitter: { card: 'summary', title: 'MorrowMade — Ideas, Made Real.', description: 'Personalized 3D printed products designed and made for you.' },
+  openGraph: {
+    type: 'website',
+    locale: 'en_IN',
+    siteName: 'WOW RIGHT',
+    title: 'WOW RIGHT — Ideas, Made Real.',
+    description: 'Personalized 3D printed products made around you.',
+    images: ['/demo-products/hero-studio.webp'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'WOW RIGHT — Ideas, Made Real.',
+    description: 'Personalized 3D printed products made around you.',
+    images: ['/demo-products/hero-studio.webp'],
+  },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const organization={"@context":"https://schema.org","@type":"Organization",name:'MorrowMade',url:process.env.SITE_URL||'http://localhost:3000',address:{"@type":"PostalAddress",addressLocality:'Bangalore',addressCountry:'IN'},contactPoint:{"@type":"ContactPoint",telephone:'+91-93531-93080',contactType:'customer service'}};
-  return <html lang="en"><body className={`${sans.variable} ${serif.variable}`}><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(organization)}}/><StoreProvider>{children}</StoreProvider></body></html>;
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  const organization = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'WOW RIGHT',
+    url: process.env.SITE_URL || 'http://localhost:3000',
+    logo: `${process.env.SITE_URL || 'http://localhost:3000'}/demo-products/hero-studio.webp`,
+    address: {
+      '@type': 'PostalAddress',
+      addressLocality: 'Bangalore',
+      addressCountry: 'IN',
+    },
+    contactPoint: {
+      '@type': 'ContactPoint',
+      telephone: '+91-93531-93080',
+      contactType: 'customer service',
+    },
+  };
+  return (
+    <html lang="en">
+      <body className={`${sans.variable} ${serif.variable}`}>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organization) }}
+        />
+        <StoreProvider>
+          <CompanionProvider>{children}<AnalyticsProvider/></CompanionProvider>
+        </StoreProvider>
+      </body>
+    </html>
+  );
 }

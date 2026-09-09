@@ -1,3 +1,80 @@
-import{describe,expect,it}from'vitest';import{createWhatsAppOrderMessage,createWhatsAppOrderURL}from'@/lib/services/whatsapp';import{AI_UNAVAILABLE_MESSAGE,getAIProvider}from'@/lib/services/ai';
-const order={orderNumber:'3DP-20260901-1048',customer:{name:'Yogesh',mobile:'919353193080',line1:'1 Main Road',locality:'JP Nagar',city:'Bengaluru',state:'Karnataka',pinCode:'560078'},items:[{name:'Krishna Idol',quantity:1,selections:{size:'medium',colour:'white',lighting:'yes'},unitPrice:1299}],subtotal:1299,deliveryAmount:100,total:1399,paymentStatus:'unpaid'};
-describe('WhatsApp and fallback',()=>{it('creates the complete WhatsApp order message',()=>{const message=createWhatsAppOrderMessage(order);expect(message).toContain('Order: #3DP-20260901-1048');expect(message).toContain('Delivery area: JP Nagar');expect(message).toContain('Payment status: Awaiting confirmation');expect(message).toContain('Total: ₹1,399')});it('encodes a wa.me deep link safely',()=>{const url=createWhatsAppOrderURL(order,'+91 93531 93080');expect(url.startsWith('https://wa.me/919353193080?text=')).toBe(true);expect(decodeURIComponent(url)).toContain("I'd like to confirm my order")});it('returns an unavailable provider without a key',async()=>{const provider=getAIProvider();expect(await provider.healthCheck()).toBe(false);await expect(provider.generate({message:'help',context:{}})).rejects.toThrow('AI_UNAVAILABLE');expect(AI_UNAVAILABLE_MESSAGE).toContain('continue shopping')})});
+import { describe, expect, it } from 'vitest';
+import {
+  createWhatsAppOrderMessage,
+  createWhatsAppOrderURL,
+  createOrderUpdateURL,
+} from '@/lib/services/whatsapp';
+import { AI_UNAVAILABLE_MESSAGE, createAIProvider } from '@/lib/services/ai';
+
+const order = {
+  orderNumber: '3DP-20260901-1048',
+  customer: {
+    name: 'Yogesh',
+    mobile: '919353193080',
+    line1: '1 Main Road',
+    locality: 'JP Nagar',
+    city: 'Bengaluru',
+    state: 'Karnataka',
+    pinCode: '560078',
+  },
+  items: [
+    {
+      name: 'Krishna Idol',
+      quantity: 1,
+      selections: { size: 'medium', colour: 'white', lighting: 'yes' },
+      unitPrice: 1299,
+    },
+  ],
+  subtotal: 1299,
+  deliveryAmount: 100,
+  total: 1399,
+  paymentStatus: 'unpaid',
+};
+
+describe('WhatsApp and fallback', () => {
+  it('offers only truthful customer-facing delivery notifications', () => {
+    expect(
+      createOrderUpdateURL(
+        { orderNumber: 'WR-TEST', status: 'printing', mobile: '919000000001' },
+        'https://example.test',
+      ),
+    ).toBeNull();
+    const url = createOrderUpdateURL(
+      {
+        orderNumber: 'WR-TEST',
+        status: 'scheduled',
+        mobile: '919000000001',
+        deliveryDate: '2099-01-01',
+        deliveryWindow: 'Owner-confirmed window',
+      },
+      'https://example.test',
+    );
+    const text = new URL(url!).searchParams.get('text')!;
+    expect(text).toContain('Scheduled for Delivery');
+    expect(text).not.toContain('Delivered.');
+    expect(text).toContain('https://example.test/order/WR-TEST');
+  });
+  it('creates the complete WhatsApp order message', () => {
+    const message = createWhatsAppOrderMessage(order);
+    expect(message).toContain('Order: #3DP-20260901-1048');
+    expect(message).toContain('Delivery area: JP Nagar');
+    expect(message).toContain('Payment status: Awaiting confirmation');
+    expect(message).toContain('Total: ₹1,399');
+  });
+  it('encodes a wa.me deep link safely', () => {
+    const url = createWhatsAppOrderURL(order, '+91 93531 93080');
+    expect(url.startsWith('https://wa.me/919353193080?text=')).toBe(true);
+    expect(decodeURIComponent(url)).toContain("I'd like to confirm my order");
+  });
+  it('returns an unavailable provider without a key', async () => {
+    const provider = createAIProvider({
+      provider: 'openai',
+      model: 'gpt-5.6-luna',
+    });
+    expect(await provider.healthCheck()).toBe(false);
+    await expect(
+      provider.generate({ message: 'help', context: {} }),
+    ).rejects.toThrow('AI_UNAVAILABLE');
+    expect(AI_UNAVAILABLE_MESSAGE).toContain('continue shopping');
+  });
+});

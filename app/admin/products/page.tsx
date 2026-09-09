@@ -1,1 +1,4 @@
-import{AdminApp}from'@/components/admin-app';export default function Page(){return<AdminApp view="products"/>}
+import { AdminApp } from '@/components/admin-app';
+export default function Page() {
+  return <AdminApp view="products" />;
+}

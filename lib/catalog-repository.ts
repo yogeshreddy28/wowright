@@ -1,6 +1,280 @@
-import{env}from'cloudflare:workers';import type{Product,ProductOption,OptionValue}from'./domain';import{sampleProducts}from'./catalog';
-type Row=Record<string,unknown>;function bool(v:unknown){return Boolean(v)}
-async function hydrate(rows:Row[]):Promise<Product[]>{if(!rows.length)return[];const ids=rows.map(r=>String(r.id));const marks=ids.map(()=>'?').join(',');const[optionsResult,valuesResult]=await env.DB.batch([env.DB.prepare(`SELECT * FROM product_options WHERE product_id IN (${marks}) ORDER BY sort_order`).bind(...ids),env.DB.prepare(`SELECT v.* FROM product_option_values v JOIN product_options o ON o.id=v.option_id WHERE o.product_id IN (${marks}) AND v.active=1 ORDER BY v.sort_order`).bind(...ids)]);const values=(valuesResult.results as Row[]).map(v=>({id:String(v.id),optionId:String(v.option_id),label:String(v.label),value:String(v.value),priceAdjustment:Number(v.price_adjustment) }));return rows.map(r=>{const opts=(optionsResult.results as Row[]).filter(o=>o.product_id===r.id).map(o=>({id:String(o.id),key:String(o.key),name:String(o.name),type:String(o.type) as ProductOption['type'],required:bool(o.required),placeholder:o.placeholder?String(o.placeholder):undefined,values:values.filter(v=>v.optionId===o.id).map(({optionId:_,...v})=>v as OptionValue)}));return{id:String(r.id),slug:String(r.slug),name:String(r.name),shortDescription:String(r.short_description),description:String(r.description),category:String(r.category),basePrice:Number(r.base_price),compareAtPrice:r.compare_at_price==null?undefined:Number(r.compare_at_price),active:bool(r.active),featured:bool(r.featured),stockMode:String(r.stock_mode),stockQuantity:r.stock_quantity==null?undefined:Number(r.stock_quantity),leadTime:String(r.lead_time),images:Array.isArray(r.images)?r.images:JSON.parse(String(r.images||'[]')),options:opts}})}
-export async function getCatalogProducts(){try{const result=await env.DB.prepare('SELECT * FROM products WHERE active=1 ORDER BY featured DESC,created_at').all();const items=await hydrate(result.results as Row[]);return items.length?items:sampleProducts}catch{return sampleProducts}}
-export async function getCatalogProductBySlug(slug:string){const products=await getCatalogProducts();return products.find(p=>p.slug===slug)}
-export async function getCatalogProductById(id:string){const products=await getCatalogProducts();return products.find(p=>p.id===id)}
+import { env } from 'cloudflare:workers';
+import type { Product, ProductOption, OptionValue } from './domain';
+type Row = Record<string, unknown>;
+export type CatalogCategory = {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  image?: string;
+  productCount: number;
+};
+function bool(value: unknown) {
+  return Boolean(value);
+}
+function json<T>(value: unknown, fallback: T): T {
+  try {
+    return Array.isArray(value) || (typeof value === 'object' && value !== null)
+      ? (value as T)
+      : (JSON.parse(String(value || '')) as T);
+  } catch {
+    return fallback;
+  }
+}
+export function categorySlug(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+async function hydrate(rows: Row[]): Promise<Product[]> {
+  if (!rows.length) return [];
+  const ids = rows.map((row) => String(row.id));
+  const marks = ids.map(() => '?').join(',');
+  const [
+    optionResult,
+    valueResult,
+    relatedResult,
+    imageResult,
+    variantResult,
+    tagResult,
+    settingResult,
+  ] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT * FROM product_options WHERE product_id IN (${marks}) ORDER BY sort_order`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT v.* FROM product_option_values v JOIN product_options o ON o.id=v.option_id WHERE o.product_id IN (${marks}) AND v.active=1 ORDER BY v.sort_order`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT * FROM related_products WHERE product_id IN (${marks}) ORDER BY sort_order`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT *,'/api/product-images/'||id url FROM product_images WHERE product_id IN (${marks}) ORDER BY CASE role WHEN 'main' THEN 0 ELSE 1 END,sort_order`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT v.*,f.name finish_name,f.swatch,(SELECT '/api/product-images/'||i.id FROM product_images i WHERE i.global_finish_id=f.id ORDER BY i.sort_order LIMIT 1) reference_image,(SELECT '/api/product-images/'||i.id FROM product_images i WHERE i.id=v.exact_image_id) exact_image FROM product_variants v LEFT JOIN global_finishes f ON f.id=v.finish_id WHERE v.product_id IN (${marks}) ORDER BY v.sort_order,v.created_at`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT pt.product_id,t.name FROM product_tags pt JOIN tags t ON t.id=pt.tag_id WHERE pt.product_id IN (${marks}) ORDER BY t.name`,
+    ).bind(...ids),
+    env.DB.prepare(
+      "SELECT key,value FROM settings WHERE key IN ('productDefaultMaterial','productDefaultLeadTime','productDefaultDeliveryNotes','productDefaultCareInstructions','productMadeToOrderNotice')",
+    ),
+  ]);
+  const defaults = Object.fromEntries(
+    (settingResult.results as Row[]).map((setting) => {
+      try {
+        return [String(setting.key), JSON.parse(String(setting.value))];
+      } catch {
+        return [String(setting.key), ''];
+      }
+    }),
+  );
+  const values = (valueResult.results as Row[]).map((value) => ({
+    id: String(value.id),
+    optionId: String(value.option_id),
+    label: String(value.label),
+    value: String(value.value),
+    priceAdjustment: Number(value.price_adjustment),
+  }));
+  return rows.map((row) => {
+    const options = (optionResult.results as Row[])
+      .filter((option) => option.product_id === row.id)
+      .map((option) => ({
+        id: String(option.id),
+        key: String(option.key),
+        name: String(option.name),
+        type: String(option.type) as ProductOption['type'],
+        required: bool(option.required),
+        placeholder: option.placeholder
+          ? String(option.placeholder)
+          : undefined,
+        values: values
+          .filter((value) => value.optionId === option.id)
+          .map(({ optionId: _, ...value }) => value as OptionValue),
+      }));
+    const normalizedImages = (imageResult.results as Row[])
+      .filter((image) => image.product_id === row.id)
+      .map((image) => String(image.url));
+    const normalizedTags = (tagResult.results as Row[])
+      .filter((tag) => tag.product_id === row.id)
+      .map((tag) => String(tag.name));
+    return {
+      id: String(row.id),
+      slug: String(row.slug),
+      name: String(row.name),
+      shortDescription: String(row.short_description),
+      description: String(row.description),
+      category: String(row.category),
+      basePrice: Number(row.base_price),
+      compareAtPrice:
+        row.compare_at_price == null ? undefined : Number(row.compare_at_price),
+      active: bool(row.active),
+      featured: bool(row.featured),
+      stockMode: String(row.stock_mode),
+      productType:
+        row.product_type === 'customizable' ||
+        row.stock_mode === 'quote_only' ||
+        Number(row.base_price) <= 0
+          ? ('customizable' as const)
+          : ('normal' as const),
+      stockQuantity:
+        row.stock_quantity == null ? undefined : Number(row.stock_quantity),
+      leadTime: String(row.lead_time || defaults.productDefaultLeadTime || ''),
+      images: normalizedImages.length
+        ? normalizedImages
+        : json<string[]>(row.images, []),
+      options,
+      status: (row.status ? String(row.status) : 'active') as Product['status'],
+      dimensions: row.dimensions ? String(row.dimensions) : undefined,
+      material: row.material
+        ? String(row.material)
+        : defaults.productDefaultMaterial
+          ? String(defaults.productDefaultMaterial)
+          : undefined,
+      deliveryNotes: row.delivery_notes
+        ? String(row.delivery_notes)
+        : defaults.productDefaultDeliveryNotes
+          ? String(defaults.productDefaultDeliveryNotes)
+          : undefined,
+      careInstructions: row.care_instructions
+        ? String(row.care_instructions)
+        : defaults.productDefaultCareInstructions
+          ? String(defaults.productDefaultCareInstructions)
+          : undefined,
+      madeToOrderNotice: defaults.productMadeToOrderNotice
+        ? String(defaults.productMadeToOrderNotice)
+        : undefined,
+      tags: normalizedTags.length
+        ? normalizedTags
+        : json<string[]>(row.tags, []),
+      finishReferenceImages: json<Record<string, string>>(
+        row.finish_reference_images,
+        {},
+      ),
+      relatedProductIds: (relatedResult.results as Row[])
+        .filter((related) => related.product_id === row.id)
+        .map((related) => String(related.related_product_id)),
+      publishingStatus: String(
+        row.publishing_status ||
+          (row.status === 'draft' ? 'draft' : 'published'),
+      ) as Product['publishingStatus'],
+      availability: String(
+        row.availability ||
+          (row.status === 'unavailable'
+            ? 'temporarily_unavailable'
+            : 'available'),
+      ) as Product['availability'],
+      structuredDimensions: {
+        width: row.width == null ? undefined : Number(row.width),
+        depth: row.depth == null ? undefined : Number(row.depth),
+        height: row.height == null ? undefined : Number(row.height),
+        unit: String(row.dimension_unit || 'cm'),
+      },
+      variants: (variantResult.results as Row[])
+        .filter((variant) => variant.product_id === row.id)
+        .map((variant) => ({
+          id: String(variant.id),
+          name: String(variant.finish_name || variant.name),
+          finishId: variant.finish_id ? String(variant.finish_id) : undefined,
+          sellingPrice:
+            variant.selling_price == null
+              ? undefined
+              : Number(variant.selling_price),
+          originalPrice:
+            variant.original_price == null
+              ? undefined
+              : Number(variant.original_price),
+          priceAdjustment: Number(variant.price_adjustment || 0),
+          active: bool(variant.active),
+          availability: String(variant.availability || 'available') as
+            | 'available'
+            | 'temporarily_unavailable'
+            | 'discontinued',
+          exactImage: variant.exact_image
+            ? String(variant.exact_image)
+            : undefined,
+          referenceImage: variant.reference_image
+            ? String(variant.reference_image)
+            : undefined,
+          swatch: variant.swatch ? String(variant.swatch) : undefined,
+        })),
+    };
+  });
+}
+export async function getCatalogProducts() {
+  try {
+    const result = await env.DB.prepare(
+      "SELECT * FROM products WHERE active=1 AND COALESCE(publishing_status,CASE WHEN status='draft' THEN 'draft' ELSE 'published' END)='published' AND COALESCE(availability,CASE WHEN status='unavailable' THEN 'temporarily_unavailable' ELSE 'available' END)<>'discontinued' ORDER BY featured DESC, created_at DESC",
+    ).all();
+    const items = await hydrate(result.results as Row[]);
+    return items;
+  } catch {
+    // Never resurrect demo products when the database is empty or unavailable.
+    return [];
+  }
+}
+export async function getCatalogProductBySlug(slug: string) {
+  return (await getCatalogProducts()).find((product) => product.slug === slug);
+}
+export async function getCatalogProductById(id: string) {
+  return (await getCatalogProducts()).find((product) => product.id === id);
+}
+export async function getCatalogCategories(): Promise<CatalogCategory[]> {
+  const products = await getCatalogProducts();
+  try {
+    const result = await env.DB.prepare(
+      'SELECT id,slug,name,description,image FROM categories WHERE active=1 ORDER BY sort_order,name',
+    ).all<Row>();
+    const configured = result.results
+      .map((row) => ({
+        id: String(row.id),
+        slug: String(row.slug),
+        name: String(row.name),
+        description: row.description ? String(row.description) : undefined,
+        image: row.image ? String(row.image) : undefined,
+        productCount: products.filter(
+          (product) => product.category === row.name,
+        ).length,
+      }))
+      .filter((category) => category.productCount > 0);
+    if (configured.length) return configured;
+  } catch {}
+  return [...new Set(products.map((product) => product.category))].map(
+    (name) => ({
+      id: categorySlug(name),
+      slug: categorySlug(name),
+      name,
+      productCount: products.filter((product) => product.category === name)
+        .length,
+    }),
+  );
+}
+export async function getRelatedProducts(product: Product) {
+  const all = await getCatalogProducts();
+  return (
+    product.relatedProductIds?.length
+      ? product.relatedProductIds
+          .map((id) => all.find((item) => item.id === id))
+          .filter(Boolean)
+      : all
+          .filter(
+            (item) =>
+              item.id !== product.id && item.category === product.category,
+          )
+          .slice(0, 4)
+  ) as Product[];
+}
+export async function getBestSellingProducts() {
+  try {
+    const result = await env.DB.prepare(
+      "SELECT p.* FROM products p JOIN (SELECT oi.product_id, SUM(oi.quantity) sold FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.status='delivered' AND o.is_test=0 GROUP BY oi.product_id) sales ON sales.product_id=p.id WHERE p.active=1 AND p.publishing_status='published' AND p.availability='available' ORDER BY sales.sold DESC LIMIT 4",
+    ).all();
+    return hydrate(result.results as Row[]);
+  } catch {
+    return [];
+  }
+}

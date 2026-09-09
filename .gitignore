@@ -25,6 +25,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 
 # local environment
 .env*
@@ -38,3 +39,14 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+/.local-backups/
+
+# Local databases and temporary development artifacts
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.tmp
+*.bak
+/.tmp/
+/tmp/

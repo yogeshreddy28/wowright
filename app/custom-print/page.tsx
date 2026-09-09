@@ -1,1 +1,61 @@
-import type{Metadata}from'next';import{AppShell}from'@/components/app-shell';import{CustomQuoteForm}from'@/components/custom-quote-form';export const metadata:Metadata={title:'Create something custom | MorrowMade',description:'Share a model, sketch or idea for a private custom 3D print quote.'};export default function CustomPrint(){return<AppShell><section className="custom-page"><div className="custom-intro"><p className="eyebrow">Custom-made, from the first line</p><h1>Show us the idea.<br/><em>We’ll find the form.</em></h1><p>It can begin as a file, a sketch, a photo, or a sentence. Give us the useful details and we’ll review feasibility, finish and pricing.</p><ol><li><b>01</b><span>Share the idea and useful references</span></li><li><b>02</b><span>We review design and manufacturability</span></li><li><b>03</b><span>You receive a clear quote on WhatsApp</span></li></ol></div><CustomQuoteForm/></section></AppShell>}
+import type { Metadata } from 'next';
+import { AppShell } from '@/components/app-shell';
+import { CustomQuoteForm } from '@/components/custom-quote-form';
+import { CheckCircle2, FileSearch, MessagesSquare } from 'lucide-react';
+export const metadata: Metadata = {
+  title: 'Create something custom',
+  description:
+    'Upload a reference, model or photo—or simply describe what you want WOW RIGHT to make.',
+};
+export default function CustomPrint() {
+  return (
+    <AppShell>
+      <section className="custom-hero">
+        <div>
+          <p className="eyebrow">Custom 3D print</p>
+          <h1>
+            Have an idea?
+            <br />
+            <em>Let’s make it real.</em>
+          </h1>
+          <p>
+            Upload a reference, model or photo — or simply describe what you
+            want.
+          </p>
+          <a className="button primary" href="#custom-request">
+            Describe your idea
+          </a>
+          <div className="custom-mini-steps">
+            <span>
+              <FileSearch />
+              <b>Share</b> your idea
+            </span>
+            <span>
+              <MessagesSquare />
+              <b>Review</b> your quote
+            </span>
+            <span>
+              <CheckCircle2 />
+              <b>Approve</b> then pay by UPI
+            </span>
+          </div>
+        </div>
+        <img
+          src="/demo-products/custom-workflow-wide.webp"
+          alt="A concept sketch becoming a digital model and finished product"
+        />
+      </section>
+      <section className="custom-form-section" id="custom-request">
+        <div className="custom-form-intro">
+          <p className="eyebrow">Tell us what you have in mind</p>
+          <h2>A useful brief starts here.</h2>
+          <p>
+            Share the essentials now. We’ll review the idea, references and
+            practical details before discussing the quote with you.
+          </p>
+        </div>
+        <CustomQuoteForm />
+      </section>
+    </AppShell>
+  );
+}

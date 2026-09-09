@@ -1,0 +1,27 @@
+[
+  {
+    "name": "",
+    "category": "",
+    "sku": "",
+    "slug": "",
+    "short_description": "",
+    "description": "",
+    "selling_price": null,
+    "original_price": null,
+    "dimensions": {
+      "width": null,
+      "depth": null,
+      "height": null,
+      "unit": "cm"
+    },
+    "material": "",
+    "lead_time": "",
+    "tags": [],
+    "availability": "available",
+    "commercial_license_status": "unchecked",
+    "estimated_print_time": null,
+    "filament_grams": null,
+    "support_difficulty": "",
+    "variants": []
+  }
+]

@@ -1,3 +1,110 @@
-import{env}from'cloudflare:workers';import{verifyAdmin}from'@/lib/admin-auth';import{assertTransition}from'@/lib/services/orders';import type{OrderStatus}from'@/lib/domain';
-export async function GET(r:Request,{params}:{params:Promise<{orderId:string}>}){if(!await verifyAdmin(r))return Response.json({error:'Unauthorized'},{status:401});const{orderId}=await params;const order=await env.DB.prepare('SELECT o.*,c.name customer_name,c.mobile,c.email,a.line1,a.line2,a.locality,a.city,a.state,a.pin_code,a.landmark FROM orders o JOIN customers c ON c.id=o.customer_id JOIN customer_addresses a ON a.id=o.address_id WHERE o.order_number=? OR o.id=?').bind(orderId,orderId).first<Record<string,unknown>>();if(!order)return Response.json({error:'Not found'},{status:404});const[items,timeline,conversation]=await env.DB.batch([env.DB.prepare('SELECT * FROM order_items WHERE order_id=?').bind(order.id),env.DB.prepare('SELECT * FROM order_timeline WHERE order_id=? ORDER BY created_at DESC').bind(order.id),env.DB.prepare('SELECT m.* FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.session_id=? ORDER BY m.created_at').bind(order.session_id)]);const customizations=await env.DB.prepare('SELECT c.* FROM order_item_customizations c JOIN order_items i ON i.id=c.order_item_id WHERE i.order_id=?').bind(order.id).all();return Response.json({order,items:items.results,customizations:customizations.results,timeline:timeline.results,conversation:conversation.results})}
-export async function PATCH(r:Request,{params}:{params:Promise<{orderId:string}>}){if(!await verifyAdmin(r))return Response.json({error:'Unauthorized'},{status:401});const{orderId}=await params;const data=await r.json()as{status?:OrderStatus;paymentStatus?:string;paymentMethod?:string;internalNotes?:string};const order=await env.DB.prepare('SELECT id,status FROM orders WHERE order_number=? OR id=?').bind(orderId,orderId).first<{id:string;status:OrderStatus}>();if(!order)return Response.json({error:'Not found'},{status:404});try{const now=new Date().toISOString(),batch=[];if(data.status&&data.status!==order.status){assertTransition(order.status,data.status);batch.push(env.DB.prepare('UPDATE orders SET status=?,updated_at=? WHERE id=?').bind(data.status,now,order.id));batch.push(env.DB.prepare('INSERT INTO order_timeline (id,order_id,from_status,to_status,note,actor,created_at) VALUES (?,?,?,?,?,?,?)').bind(crypto.randomUUID(),order.id,order.status,data.status,'Updated from admin','admin',now))}if(data.paymentStatus||data.paymentMethod)batch.push(env.DB.prepare('UPDATE orders SET payment_status=COALESCE(?,payment_status),payment_method=COALESCE(?,payment_method),updated_at=? WHERE id=?').bind(data.paymentStatus||null,data.paymentMethod||null,now,order.id));if(data.internalNotes!==undefined)batch.push(env.DB.prepare('UPDATE orders SET internal_notes=?,updated_at=? WHERE id=?').bind(data.internalNotes,now,order.id));if(batch.length)await env.DB.batch(batch);return Response.json({ok:true})}catch(e){return Response.json({error:e instanceof Error?e.message:'Invalid update'},{status:400})}}
+import { dispatchMetaInBackground } from '@/lib/services/meta-background';
+import { env } from 'cloudflare:workers';
+import { verifyAdmin } from '@/lib/admin-auth';
+import { createOrderUpdateURL } from '@/lib/services/whatsapp';
+import { z } from 'zod';
+import {
+  CommerceError,
+  safeError,
+  sameOrigin,
+} from '@/lib/services/launch-rules';
+import { confirmUPI, fulfill } from '@/lib/services/fulfillment';
+import { mutateOrder, readOperationOrder } from '@/lib/services/order-mutation';
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ orderId: string }> },
+) {
+  if (!(await verifyAdmin(request)))
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  const { orderId } = await params;
+  const order = await env.DB.prepare(
+    'SELECT o.*,c.name customer_name,c.mobile,c.email,a.line1,a.line2,a.locality,a.city,a.state,a.pin_code,a.landmark FROM orders o JOIN customers c ON c.id=o.customer_id JOIN customer_addresses a ON a.id=o.address_id WHERE o.order_number=? OR o.id=?',
+  )
+    .bind(orderId, orderId)
+    .first<Record<string, unknown>>();
+  if (!order) return Response.json({ error: 'Not found' }, { status: 404 });
+  const [items, timeline, conversation, customizations, proofs, collections, deliveryVerification] =
+    await env.DB.batch([
+      env.DB.prepare('SELECT * FROM order_items WHERE order_id=?').bind(
+        order.id,
+      ),
+      env.DB.prepare(
+        'SELECT * FROM order_timeline WHERE order_id=? ORDER BY created_at DESC',
+      ).bind(order.id),
+      env.DB.prepare(
+        'SELECT m.* FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.session_id=? ORDER BY m.created_at',
+      ).bind(order.session_id),
+      env.DB.prepare(
+        'SELECT c.* FROM order_item_customizations c JOIN order_items i ON i.id=c.order_item_id WHERE i.order_id=?',
+      ).bind(order.id),
+      env.DB.prepare(
+        'SELECT id,created_at FROM delivery_proofs WHERE order_id=? ORDER BY created_at DESC',
+      ).bind(order.id),
+      env.DB.prepare(
+        'SELECT method,amount_due,amount_collected,settlement_status,collected_at,settled_at FROM payment_collections WHERE order_id=?',
+      ).bind(order.id),
+      env.DB.prepare("SELECT s.id stop_id,s.status,(SELECT CASE WHEN x.override_reason IS NOT NULL THEN 'admin_override' WHEN x.verified_at IS NOT NULL THEN 'verified' WHEN julianday(x.expires_at)<=julianday('now') THEN 'expired' ELSE 'pending' END FROM delivery_otps x WHERE x.stop_id=s.id AND x.invalidated_at IS NULL ORDER BY x.generated_at DESC LIMIT 1) otp_status,(SELECT x.override_reason FROM delivery_otps x WHERE x.stop_id=s.id AND x.invalidated_at IS NULL ORDER BY x.generated_at DESC LIMIT 1) override_reason FROM delivery_stops s WHERE s.order_id=? ORDER BY s.created_at DESC LIMIT 1").bind(order.id),
+    ]);
+  return Response.json({
+    order,
+    updateWhatsAppURL: createOrderUpdateURL({
+      orderNumber: String(order.order_number),
+      status: String(order.status),
+      mobile: String(order.mobile),
+      deliveryDate: String(order.promised_delivery_date || ''),
+      deliveryWindow: String(order.delivery_window || ''),
+    }),
+    items: items.results,
+    customizations: customizations.results,
+    timeline: timeline.results,
+    conversation: conversation.results,
+    proofs: proofs.results,
+    collections: collections.results,
+    deliveryVerification: deliveryVerification.results[0] || null,
+  });
+}
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ orderId: string }> },
+) {
+  if (!(await verifyAdmin(request)))
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    sameOrigin(request);
+    const { orderId } = await params;
+    const data = z
+      .object({
+        status: z.string().optional(),
+        paymentStatus: z.enum(['paid', 'cod']).optional(),
+        paymentMethod: z.enum(['UPI', 'COD']).optional(),
+        internalNotes: z.string().max(5000).optional(),
+      })
+      .parse(await request.json());
+    if (data.paymentStatus === 'paid' && data.paymentMethod === 'UPI') {
+      const result = await confirmUPI(env.DB, orderId);
+      dispatchMetaInBackground(env.DB);
+      return Response.json(result);
+    }
+    if (data.status === 'cancelled')
+      return Response.json(
+        await fulfill(env.DB, orderId, {
+          action: 'cancel',
+          note: data.internalNotes || 'Cancelled by owner',
+        }),
+      );
+    if (data.status || data.paymentStatus || data.paymentMethod)
+      throw new CommerceError(
+        'Use Production for item checks and Delivery for dispatch. Payment methods cannot be switched after checkout.',
+      );
+    const order = await readOperationOrder(env.DB, orderId);
+    if (data.internalNotes !== undefined)
+      await mutateOrder(env.DB, order, {
+        note: 'Internal note updated',
+        actor: 'admin',
+        extra: { internal_notes: data.internalNotes },
+      });
+    return Response.json({ ok: true });
+  } catch (error) {
+    return safeError(error);
+  }
+}

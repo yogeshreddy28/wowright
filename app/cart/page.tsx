@@ -1,1 +1,4 @@
-import{CartView}from'@/components/cart-view';export default function CartPage(){return<CartView/>}
+import { CartView } from '@/components/cart-view';
+export default function CartPage() {
+  return <CartView />;
+}

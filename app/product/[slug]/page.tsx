@@ -1,3 +1,221 @@
-import type{Metadata}from'next';import{notFound}from'next/navigation';import{AppShell}from'@/components/app-shell';import{ProductImage}from'@/components/product-image';import{ProductConfigurator}from'@/components/product-configurator';import{getCatalogProductBySlug}from'@/lib/catalog-repository';import{formatMoney}from'@/lib/services/pricing';import{Clock,MapPin,RefreshCcw,ShieldCheck}from'lucide-react';
-export async function generateMetadata({params}:{params:Promise<{slug:string}>}):Promise<Metadata>{const{slug}=await params;const p=await getCatalogProductBySlug(slug);if(!p)return{title:'Product unavailable | MorrowMade'};return{title:`${p.name} | MorrowMade`,description:p.shortDescription,alternates:{canonical:`/product/${p.slug}`},openGraph:{title:p.name,description:p.shortDescription,images:[]},twitter:{card:'summary',title:p.name,description:p.shortDescription,images:[]}}}
-export default async function ProductPage({params}:{params:Promise<{slug:string}>}){const{slug}=await params;const p=await getCatalogProductBySlug(slug);if(!p||p.stockMode==='quote_only')notFound();const schema={"@context":"https://schema.org","@type":"Product",name:p.name,description:p.shortDescription,brand:{"@type":"Brand",name:'MorrowMade'},offers:{"@type":"Offer",priceCurrency:'INR',price:p.basePrice,availability:'https://schema.org/PreOrder'}};return<AppShell><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(schema)}}/><section className="product-detail"><div className="gallery"><ProductImage src={p.images[0]} alt={p.name}/><div className="gallery-thumbs"><ProductImage alt={`${p.name} alternate view`}/><ProductImage alt={`${p.name} detail`}/></div></div><div className="product-info"><p className="eyebrow">{p.category} · Made to order</p><h1>{p.name}</h1><p className="product-short">{p.shortDescription}</p><div className="price-line"><strong>From {formatMoney(p.basePrice)}</strong>{p.compareAtPrice&&<del>{formatMoney(p.compareAtPrice)}</del>}</div><ProductConfigurator product={p}/><div className="product-assurances"><span><Clock/> Usually ready in {p.leadTime}</span><span><MapPin/> Made in Bangalore</span><span><ShieldCheck/> Verified pricing at checkout</span><span><RefreshCcw/> Design reviewed before production</span></div></div></section><section className="product-story"><p className="eyebrow">Thoughtfully made</p><h2>Personal details.<br/>A considered object.</h2><p>{p.description}</p></section></AppShell>}
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import Link from 'next/link';
+import { AppShell } from '@/components/app-shell';
+import { ProductGallery } from '@/components/product-gallery';
+import { ProductCard } from '@/components/product-card';
+import { ProductConfigurator } from '@/components/product-configurator';
+import { CommerceEvent } from '@/components/commerce-event';
+import { ProductReviews } from '@/components/reviews';
+import {
+  getCatalogProductBySlug,
+  getRelatedProducts,
+} from '@/lib/catalog-repository';
+import { formatMoney, getStartingPrice } from '@/lib/services/pricing';
+import {
+  Clock,
+  MapPin,
+  MessageCircle,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const product = await getCatalogProductBySlug(slug);
+  if (!product) return { title: 'Product unavailable' };
+  return {
+    title: product.name,
+    description: product.shortDescription,
+    alternates: { canonical: `/product/${product.slug}` },
+    openGraph: {
+      title: `${product.name} · WOW RIGHT`,
+      description: product.shortDescription,
+      images: product.images.slice(0, 1),
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${product.name} · WOW RIGHT`,
+      description: product.shortDescription,
+      images: product.images.slice(0, 1),
+    },
+  };
+}
+export default async function ProductPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const product = await getCatalogProductBySlug(slug);
+  if (!product) notFound();
+  const custom =
+    product.stockMode === 'quote_only' ||
+    product.productType === 'customizable';
+  const related = await getRelatedProducts(product);
+  const startingPrice = getStartingPrice(product);
+  const schema = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    description: product.shortDescription,
+    image: product.images,
+    brand: { '@type': 'Brand', name: 'WOW RIGHT' },
+    offers: custom
+      ? undefined
+      : {
+          '@type': 'Offer',
+          priceCurrency: 'INR',
+          price: startingPrice,
+          availability:
+            product.availability === 'available'
+              ? 'https://schema.org/PreOrder'
+              : 'https://schema.org/OutOfStock',
+          url: `/product/${product.slug}`,
+        },
+  };
+  return (
+    <AppShell>
+      <CommerceEvent
+        name="ViewContent"
+        path={`/product/${product.slug}`}
+        productId={product.id}
+        metadata={{ price: startingPrice }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(schema).replaceAll('<', '\\u003c'),
+        }}
+      />
+      <nav className="ux-product-breadcrumb" aria-label="Product navigation">
+        <Link href="/shop">Shop</Link>
+        <span>/</span>
+        <span>{product.name}</span>
+      </nav>
+      <section className="product-detail">
+        <ProductGallery images={product.images} name={product.name} />
+        <div className="product-info">
+          <p className="eyebrow">
+            <Sparkles /> {product.category} ·{' '}
+            {product.madeToOrderNotice || 'Made to order'}
+          </p>
+          <h1>{product.name}</h1>
+          <p className="product-short">{product.shortDescription}</p>
+          <div className="price-line">
+            <strong>
+              {custom
+                ? 'Custom-made for you — request a quote'
+                : `From ${formatMoney(startingPrice)}`}
+            </strong>
+            {!custom &&
+              !product.variants?.length &&
+              product.compareAtPrice &&
+              product.compareAtPrice > startingPrice && (
+                <>
+                  <del>{formatMoney(product.compareAtPrice)}</del>
+                  <span>
+                    Save {formatMoney(product.compareAtPrice - startingPrice)}
+                  </span>
+                </>
+              )}
+          </div>
+          <p className="price-note">
+            {custom
+              ? 'Final specifications and price are agreed before payment. Custom orders require 100% prepaid UPI.'
+              : 'Choose your options below to see your total.'}
+          </p>
+          {custom ? (
+            <Link
+              className="button primary full"
+              href={`/custom-print?product=${encodeURIComponent(product.id)}`}
+            >
+              Request a custom quote
+            </Link>
+          ) : (
+            <ProductConfigurator product={product} />
+          )}
+          <button className="assistant-inline" data-assistant-hint>
+            <MessageCircle /> Need help choosing? Ask the WOW Assistant
+          </button>
+          <div className="product-assurances">
+            <span>
+              <Clock />{' '}
+              {product.leadTime
+                ? `Production estimate: ${product.leadTime}`
+                : 'Made to order · timing confirmed before production'}
+            </span>
+            <span>
+              <MapPin /> Bengaluru-focused delivery
+            </span>
+            <span>
+              <ShieldCheck /> Price and availability verified at checkout
+            </span>
+          </div>
+        </div>
+      </section>
+      <section className="product-story">
+        <p className="eyebrow">Product details</p>
+        <h2>
+          Made around
+          <br />
+          your choices.
+        </h2>
+        <div>
+          <p>{product.description}</p>
+          {(product.dimensions ||
+            Object.values(product.structuredDimensions || {}).some(
+              (value) => typeof value === 'number',
+            )) && (
+            <p>
+              <b>Dimensions:</b>{' '}
+              {product.dimensions ||
+                [
+                  product.structuredDimensions?.width,
+                  product.structuredDimensions?.depth,
+                  product.structuredDimensions?.height,
+                ]
+                  .filter((value) => value != null)
+                  .join(' × ')}{' '}
+              {!product.dimensions && product.structuredDimensions?.unit}
+            </p>
+          )}
+          {product.material && (
+            <p>
+              <b>Material:</b> {product.material}
+            </p>
+          )}
+          {product.deliveryNotes && (
+            <p>
+              <b>Delivery:</b> {product.deliveryNotes}
+            </p>
+          )}
+          {product.careInstructions && (
+            <p>
+              <b>Care:</b> {product.careInstructions}
+            </p>
+          )}
+        </div>
+      </section>
+      {related.length > 0 && (
+        <section className="section products-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">You may also like</p>
+              <h2>Related products</h2>
+            </div>
+          </div>
+          <div className="product-grid">
+            {related.map((item) => (
+              <ProductCard key={item.id} product={item} />
+            ))}
+          </div>
+        </section>
+      )}
+      <ProductReviews productId={product.id} />
+    </AppShell>
+  );
+}
