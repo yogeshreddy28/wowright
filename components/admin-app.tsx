@@ -481,6 +481,8 @@ function Customers({ data }: { data: any }) {
               <th>Customer</th>
               <th>Mobile</th>
               <th>Email</th>
+              <th>Email status</th>
+              <th>Login</th>
               <th>Orders</th>
               <th>Total spent</th>
               <th>Last order</th>
@@ -498,6 +500,8 @@ function Customers({ data }: { data: any }) {
                 </td>
                 <td>{c.mobile}</td>
                 <td>{c.email || '—'}</td>
+                <td>{c.email ? (c.email_verified_at ? 'Verified' : 'Not verified') : 'Legacy · missing email'}</td>
+                <td>{String(c.auth_method || 'legacy').split(',').map((method: string) => method === 'google' ? 'Google' : method === 'email' ? 'Email' : 'Legacy').join(' + ')}</td>
                 <td>{c.order_count}</td>
                 <td>{formatMoney(c.total_spent)}</td>
                 <td>

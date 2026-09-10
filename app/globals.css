@@ -1925,6 +1925,18 @@ a {
   text-align: center;
   font-size: 10px;
 }
+
+.google-auth-button { background:#fff; color:var(--ink); border:1px solid var(--line); justify-content:center; }
+.google-auth-button span { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; color:#4285f4; font-weight:800; background:#f4f7ff; }
+.auth-divider { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:.875rem; }
+.auth-divider::before,.auth-divider::after { content:""; flex:1; height:1px; background:var(--line); }
+.auth-text-button { border:0; background:none; color:var(--orange-deep); font-weight:700; padding:8px; cursor:pointer; }
+.email-verification-card { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:18px 20px; margin:16px 0; border:1px solid #fdba74; border-radius:16px; background:var(--orange-pale); }
+.email-verification-card p { margin:4px 0 0; color:var(--muted); }
+.account-token-card { width:min(520px,calc(100% - 32px)); margin:72px auto; background:#fff; border:1px solid var(--line); border-radius:22px; padding:clamp(22px,5vw,38px); box-shadow:0 18px 50px rgba(43,25,12,.08); }
+.account-token-card form { display:grid; gap:16px; margin-top:24px; }
+.account-token-card label { display:grid; gap:7px; font-weight:700; }
+@media (max-width:640px) { .email-verification-card { align-items:flex-start; flex-direction:column; } }
 .admin-layout {
   min-height: 100vh;
   background: #f5f3ed;

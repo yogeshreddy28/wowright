@@ -24,7 +24,7 @@ export const checkoutAddress = z.object({
   addressId: z.string().uuid().optional(),
   name: z.string().trim().min(2).max(100),
   mobile: z.string(),
-  email: z.string().email().optional().or(z.literal('')),
+  email: z.string().trim().email(),
   line1: z.string().trim().min(3).max(200),
   line2: z.string().max(200).optional(),
   locality: z.string().trim().min(2).max(100),
@@ -101,6 +101,10 @@ export async function POST(request: Request) {
     const mobile = normalizeIndianPhone(data.customer.mobile);
     if (mobile !== account.mobile)
       throw new CommerceError('Use the phone number linked to your account.');
+    if (!account.email || !account.email_verified_at)
+      throw new CommerceError('Verify your email before placing an order.', 403);
+    if (data.customer.email.trim().toLowerCase() !== account.email.trim().toLowerCase())
+      throw new CommerceError('Use the verified email linked to your account.');
     let selectedAddress: Record<string, unknown> | null = null;
     if (data.customer.addressId) {
       selectedAddress = await db.prepare('SELECT id,line1,line2,locality,city,state,pin_code,landmark,latitude,longitude FROM customer_addresses WHERE id=? AND customer_id=?').bind(data.customer.addressId, account.id).first<Record<string, unknown>>();
@@ -224,7 +228,7 @@ export async function POST(request: Request) {
     statements.push(
       db
         .prepare(
-          'INSERT INTO orders (id,order_number,idempotency_key,checkout_fingerprint,session_id,customer_id,address_id,status,payment_status,payment_method,subtotal,delivery_amount,total,customer_notes,latitude,longitude,estimated_delivery_date,campaign_attribution,companion_engaged,companion_assisted_cart,companion_assisted_checkout,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO orders (id,order_number,idempotency_key,checkout_fingerprint,session_id,customer_id,address_id,status,payment_status,payment_method,customer_email,subtotal,delivery_amount,total,customer_notes,latitude,longitude,estimated_delivery_date,campaign_attribution,companion_engaged,companion_assisted_cart,companion_assisted_checkout,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         )
         .bind(
           id,
@@ -237,6 +241,7 @@ export async function POST(request: Request) {
           outcome.orderStatus,
           outcome.paymentStatus,
           data.paymentMethod,
+          account.email,
           totals.subtotal,
           totals.deliveryAmount,
           totals.total,

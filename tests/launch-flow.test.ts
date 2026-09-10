@@ -29,6 +29,7 @@ const session = '11111111-1111-4111-8111-111111111111';
 const customer = {
   name: 'Isolated Test',
   mobile: '9000000001',
+  email: 'checkout@example.test',
   line1: 'Test address',
   locality: 'Test area',
   city: 'Bengaluru',
@@ -105,7 +106,7 @@ beforeEach(async () => {
   database = testDatabase();
   bindings.DB = database.db;
   database.sqlite.exec(
-    "INSERT INTO customers(id,name,mobile) VALUES('test-customer','Isolated test','919000000001'); INSERT INTO products(id,slug,name,short_description,description,category,category_id,base_price,publishing_status,status,commercial_license_status,estimated_print_minutes,internal_unit_cost) VALUES('test-product','isolated-product','Isolated product','','','Home Decor','cat_home_decor',599,'published','active','commercial_verified',120,100); INSERT INTO product_variants(id,product_id,name,sku,selling_price) VALUES('test-finish','test-product','Isolated finish','TEST-FINISH',599); INSERT INTO delivery_people(id,name,mobile,password_hash) VALUES('test-driver','Isolated Driver','919000000002','unused');",
+    "INSERT INTO customers(id,name,mobile,email,email_normalized,email_verified_at,auth_method) VALUES('test-customer','Isolated test','919000000001','checkout@example.test','checkout@example.test','2026-09-01T00:00:00.000Z','email'); INSERT INTO products(id,slug,name,short_description,description,category,category_id,base_price,publishing_status,status,commercial_license_status,estimated_print_minutes,internal_unit_cost) VALUES('test-product','isolated-product','Isolated product','','','Home Decor','cat_home_decor',599,'published','active','commercial_verified',120,100); INSERT INTO product_variants(id,product_id,name,sku,selling_price) VALUES('test-finish','test-product','Isolated finish','TEST-FINISH',599); INSERT INTO delivery_people(id,name,mobile,password_hash) VALUES('test-driver','Isolated Driver','919000000002','unused');",
   );
   cookie = (await createCustomerSession(database.db, 'test-customer')).split(
     ';',
@@ -161,6 +162,12 @@ describe('launch commerce rules', () => {
         )
       ).status,
     ).toBe(403);
+  });
+  it('blocks checkout when the account email is missing or unverified', async () => {
+    database.sqlite.exec("UPDATE customers SET email=NULL,email_normalized=NULL,email_verified_at=NULL WHERE id='test-customer'");
+    expect((await requestCheckout()).status).toBe(403);
+    database.sqlite.exec("UPDATE customers SET email='checkout@example.test',email_normalized='checkout@example.test' WHERE id='test-customer'");
+    expect((await requestCheckout()).status).toBe(403);
   });
   it('creates COD on-site and deduplicates checkout safely', async () => {
     const key = crypto.randomUUID();

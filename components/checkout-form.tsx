@@ -44,7 +44,7 @@ export function CheckoutForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [account, setAccount] = useState<{ name: string; mobile: string; email?: string } | null>(null);
+  const [account, setAccount] = useState<{ name: string; mobile: string; email?: string; email_verified_at?: string | null } | null>(null);
   const [preview, setPreview] = useState<{
     key: string;
     totals?: ReturnType<typeof launchTotals>;
@@ -147,7 +147,7 @@ export function CheckoutForm() {
       .then(async (response) =>
         response.ok
           ? (response.json() as Promise<{
-              customer: { name: string; mobile: string; email?: string };
+              customer: { name: string; mobile: string; email?: string; email_verified_at?: string | null };
             }>)
           : null,
       )
@@ -158,6 +158,10 @@ export function CheckoutForm() {
           return;
         }
         setAccount(body.customer);
+        if (!body.customer.email || !body.customer.email_verified_at) {
+          router.replace('/account?returnTo=checkout&verifyEmail=1');
+          return;
+        }
         if (!formRef.current) return;
         const values = {
           name: body.customer.name,
@@ -349,8 +353,8 @@ export function CheckoutForm() {
                 />
               </label>
               <label>
-                Email <small>optional</small>
-                <input name="email" type="email" autoComplete="email" defaultValue={account?.email || ''} />
+                Verified email
+                <input name="email" type="email" required readOnly autoComplete="email" defaultValue={account?.email || ''} />
               </label>
             </div>
           </section>

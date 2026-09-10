@@ -10,7 +10,7 @@ function base64ToBytes(value: string) {
   const binary = atob(value);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
-async function sha256(value: string) {
+export async function sha256(value: string) {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(value));
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -97,7 +97,7 @@ export async function getCustomerFromRequest(request: Request, db: D1Database) {
   const tokenHash = await sha256(token);
   return db
     .prepare(
-      `SELECT c.id,c.name,c.mobile,c.email FROM customer_sessions s JOIN customers c ON c.id=s.customer_id WHERE s.token_hash=? AND s.expires_at>?`,
+      `SELECT c.id,c.name,c.mobile,c.email,c.email_verified_at,c.auth_method FROM customer_sessions s JOIN customers c ON c.id=s.customer_id WHERE s.token_hash=? AND s.expires_at>?`,
     )
     .bind(tokenHash, new Date().toISOString())
     .first<{
@@ -105,7 +105,55 @@ export async function getCustomerFromRequest(request: Request, db: D1Database) {
       name: string;
       mobile: string;
       email: string | null;
+      email_verified_at: string | null;
+      auth_method: string;
     }>();
+}
+
+export function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+export async function createCustomerAuthToken(
+  db: D1Database,
+  customerId: string,
+  purpose: 'verify_email' | 'reset_password',
+  lifetimeMs: number,
+) {
+  const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll('-', '');
+  const now = new Date();
+  await db.batch([
+    db.prepare(
+      'UPDATE customer_auth_tokens SET used_at=? WHERE customer_id=? AND purpose=? AND used_at IS NULL',
+    ).bind(now.toISOString(), customerId, purpose),
+    db.prepare(
+      'INSERT INTO customer_auth_tokens (id,customer_id,purpose,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)',
+    ).bind(
+      crypto.randomUUID(),
+      customerId,
+      purpose,
+      await sha256(token),
+      new Date(now.getTime() + lifetimeMs).toISOString(),
+      now.toISOString(),
+    ),
+  ]);
+  return token;
+}
+
+export async function consumeCustomerAuthToken(
+  db: D1Database,
+  token: string,
+  purpose: 'verify_email' | 'reset_password',
+) {
+  const now = new Date().toISOString();
+  const row = await db.prepare(
+    'SELECT id,customer_id FROM customer_auth_tokens WHERE token_hash=? AND purpose=? AND used_at IS NULL AND expires_at>?',
+  ).bind(await sha256(token), purpose, now).first<{ id: string; customer_id: string }>();
+  if (!row) return null;
+  const result = await db.prepare(
+    'UPDATE customer_auth_tokens SET used_at=? WHERE id=? AND used_at IS NULL',
+  ).bind(now, row.id).run();
+  return result.meta.changes === 1 ? row.customer_id : null;
 }
 export async function createOrderAccess(db: D1Database, orderId: string) {
   const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll(

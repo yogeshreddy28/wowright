@@ -36,16 +36,19 @@ function request(
 }
 async function customer(phone = '9000000011') {
   const password = crypto.randomUUID();
+  const email = `${phone}@example.test`;
   const response = await register(
     request('/api/account/register', {
       name: 'Isolated QA account',
       phone,
+      email,
       password,
     }),
   );
   expect(response.status).toBe(200);
   return {
     phone,
+    email,
     password,
     cookie: response.headers.get('set-cookie')!.split(';')[0],
   };
@@ -54,7 +57,7 @@ describe('isolated account and saved-address journey', () => {
   it('registers, signs in and returns a safe customer view', async () => {
     const c = await customer();
     const response = await login(
-      request('/api/account/login', { phone: c.phone, password: c.password }),
+      request('/api/account/login', { email: c.email, password: c.password }),
     );
     expect(response.status).toBe(200);
     const profile = await account(
@@ -81,6 +84,7 @@ describe('isolated account and saved-address journey', () => {
           request('/api/account/register', {
             name: 'Duplicate QA',
             phone: c.phone,
+            email: c.email,
             password: crypto.randomUUID(),
           }),
         )
@@ -90,7 +94,7 @@ describe('isolated account and saved-address journey', () => {
       (
         await login(
           request('/api/account/login', {
-            phone: c.phone,
+            email: c.email,
             password: crypto.randomUUID(),
           }),
         )

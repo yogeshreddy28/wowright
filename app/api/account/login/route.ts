@@ -6,9 +6,10 @@ import {
   verifyCustomerPassword,
 } from '@/lib/customer-auth';
 import { normalizeIndianPhone } from '@/lib/services/phone';
+import { normalizeEmail } from '@/lib/customer-auth';
 import { durableRateLimit } from '@/lib/rate-limit';
 const schema = z.object({
-  phone: z.string(),
+  email: z.string().trim().min(3).max(254),
   password: z.string().min(1).max(128),
 });
 export async function POST(request: Request) {
@@ -30,23 +31,25 @@ export async function POST(request: Request) {
       { status: 429 },
     );
   try {
-    const data = schema.parse(await request.json()),
-      mobile = normalizeIndianPhone(data.phone);
+    const data = schema.parse(await request.json());
+    const identifier = data.email.includes('@')
+      ? normalizeEmail(data.email)
+      : normalizeIndianPhone(data.email);
     const customer = await env.DB.prepare(
-      'SELECT id,password_hash FROM customers WHERE mobile=?',
+      'SELECT id,password_hash,email_verified_at FROM customers WHERE email_normalized=? OR (email_normalized IS NULL AND lower(trim(email))=?) OR (email_normalized IS NULL AND mobile=?)',
     )
-      .bind(mobile)
-      .first<{ id: string; password_hash: string | null }>();
+      .bind(identifier, identifier, identifier)
+      .first<{ id: string; password_hash: string | null; email_verified_at: string | null }>();
     if (
       !customer?.password_hash ||
       !(await verifyCustomerPassword(data.password, customer.password_hash))
     )
       return Response.json(
-        { error: 'Incorrect phone number or password.' },
+        { error: 'Incorrect email or password.' },
         { status: 401 },
       );
     return Response.json(
-      { ok: true },
+      { ok: true, emailVerified: Boolean(customer.email_verified_at) },
       {
         headers: {
           'Set-Cookie': await createCustomerSession(env.DB, customer.id),
@@ -54,9 +57,6 @@ export async function POST(request: Request) {
       },
     );
   } catch {
-    return Response.json(
-      { error: 'Incorrect phone number or password.' },
-      { status: 401 },
-    );
+    return Response.json({ error: 'Incorrect email or password.' }, { status: 401 });
   }
 }

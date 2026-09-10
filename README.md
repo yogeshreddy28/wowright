@@ -10,7 +10,7 @@ A production-oriented, mobile-first ecommerce system for personalized and custom
 - Zod validation at server boundaries
 - A small client store for instant cart UX, paired with server-authoritative checkout pricing and durable database records
 - Environment-backed signed admin sessions
-- PBKDF2-SHA256 customer passwords, opaque HttpOnly customer sessions, saved addresses and owner-only order access
+- PBKDF2-SHA256 customer passwords, Google OIDC with PKCE, verified customer email, opaque HttpOnly customer sessions, saved addresses and owner-only order access
 - Provider-based AI layer with a safe no-key fallback and a deterministic WOW Companion conversion engine
 - Vitest for pricing, phone, status, AI fallback and WhatsApp handoff tests
 
@@ -78,6 +78,17 @@ Delivery verification:
 
 The customer sees an active code only while signed in to the account that owns the out-for-delivery order. Drivers see only an input and verification result. Codes expire after 10 minutes, are single-use, rate-limited and bound to the assigned stop, order and delivery person. Admin overrides require a reason and are written to the audit history.
 
+Customer authentication and email:
+
+- `GOOGLE_CLIENT_ID` — Google OAuth 2.0 Web application client ID
+- `GOOGLE_CLIENT_SECRET` — matching server-only Google client secret
+- `RESEND_API_KEY` — server-only Resend API key
+- `EMAIL_FROM` — a verified Resend sender such as `WOW RIGHT <orders@wowright.in>`
+
+In Google Cloud Console, create an OAuth 2.0 **Web application** and add `${SITE_URL}/api/account/google/callback` as an exact authorized redirect URI. For production this is `https://wowright.in/api/account/google/callback`; for local testing add `http://localhost:3000/api/account/google/callback`. Add the matching origins to Authorized JavaScript origins. Configure the OAuth consent screen and publish/approve it as required by Google. Do not put the client secret in a public or `NEXT_PUBLIC_*` variable.
+
+In Resend, verify `wowright.in` (including the DNS records Resend supplies), create a restricted sending key, and configure `RESEND_API_KEY` and `EMAIL_FROM` as production secrets. Password registrations create an unverified account and send a 24-hour single-use verification link. Reset links expire after 30 minutes, are single-use, revoke existing customer sessions, and return the same public response whether an email exists or not. Google emails are accepted only when Google's OIDC response marks them verified. Checkout requires the signed-in account's verified email and snapshots it on every new order. Historical null emails remain unchanged and are labelled as legacy records in Admin.
+
 First-party funnel events are stored in D1. With explicit customer consent and configured credentials, optional Meta browser/server events use matching event IDs. Purchases are created server-side with the payment transaction; WhatsApp never creates a Purchase. D1 retains failed deliveries for retry from subsequent requests or Admin → Profit & analytics. Configure a scheduled outbox drain before relying on unattended retries. GA and Razorpay variables remain reserved; neither integration is called by V1.
 
 ## Catalog, prices and options
@@ -133,7 +144,7 @@ For local testing, append `?companionDebug=1` on localhost. The debug panel show
 The project contains `.openai/hosting.json` with D1 (`DB`) and R2 (`FILES`) logical bindings and produces Cloudflare Worker-compatible ESM. For production:
 
 1. Create/attach the real D1 and R2 resources through the hosting control plane.
-2. Apply all checked-in Drizzle migrations, through `0014_brief_magma.sql`, in order, then enter real catalog data. Do not load demo seed data into production.
+2. Apply all checked-in Drizzle migrations, through `0015_customer_email_auth.sql`, in order, then enter real catalog data. Do not load demo seed data into production.
 3. Add all required environment secrets to the hosting environment.
 4. Replace sample prices/copy and add real branding/product images.
 5. Set the real `SITE_URL` and configure the domain/HTTPS.

@@ -145,6 +145,10 @@ export const customers = sqliteTable(
     name: text('name').notNull(),
     mobile: text('mobile').notNull(),
     email: text('email'),
+    emailNormalized: text('email_normalized'),
+    emailVerifiedAt: text('email_verified_at'),
+    authMethod: text('auth_method').notNull().default('legacy'),
+    googleSubject: text('google_subject'),
     notes: text('notes'),
     lastOrderAt: text('last_order_at'),
     orderCount: integer('order_count').notNull().default(0),
@@ -153,7 +157,11 @@ export const customers = sqliteTable(
     isTest: integer('is_test', { mode: 'boolean' }).notNull().default(false),
     ...timestamps,
   },
-  (t) => [uniqueIndex('idx_customers_mobile').on(t.mobile)],
+  (t) => [
+    uniqueIndex('idx_customers_mobile').on(t.mobile),
+    uniqueIndex('idx_customers_email_normalized').on(t.emailNormalized),
+    uniqueIndex('idx_customers_google_subject').on(t.googleSubject),
+  ],
 );
 export const customerAddresses = sqliteTable(
   'customer_addresses',
@@ -274,6 +282,7 @@ export const orders = sqliteTable(
     status: text('status').notNull().default('awaiting_confirmation'),
     paymentStatus: text('payment_status').notNull().default('unpaid'),
     paymentMethod: text('payment_method'),
+    customerEmail: text('customer_email'),
     subtotal: integer('subtotal').notNull(),
     deliveryAmount: integer('delivery_amount').notNull(),
     total: integer('total').notNull(),
@@ -730,6 +739,43 @@ export const customerSessions = sqliteTable(
     uniqueIndex('idx_customer_session_token').on(t.tokenHash),
     index('idx_customer_session_customer').on(t.customerId),
   ],
+);
+
+export const customerAuthTokens = sqliteTable(
+  'customer_auth_tokens',
+  {
+    id: text('id').primaryKey(),
+    customerId: text('customer_id')
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    purpose: text('purpose').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    usedAt: text('used_at'),
+    createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (t) => [
+    uniqueIndex('idx_customer_auth_token_hash').on(t.tokenHash),
+    index('idx_customer_auth_token_customer').on(t.customerId, t.purpose),
+  ],
+);
+
+export const googleOauthStates = sqliteTable(
+  'google_oauth_states',
+  {
+    id: text('id').primaryKey(),
+    stateHash: text('state_hash').notNull(),
+    nonce: text('nonce').notNull(),
+    codeVerifier: text('code_verifier').notNull(),
+    returnTo: text('return_to').notNull().default('/account'),
+    pendingEmail: text('pending_email'),
+    pendingName: text('pending_name'),
+    pendingSubject: text('pending_subject'),
+    completedAt: text('completed_at'),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (t) => [uniqueIndex('idx_google_oauth_state_hash').on(t.stateHash)],
 );
 
 export const orderAccessTokens = sqliteTable(

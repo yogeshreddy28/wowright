@@ -10,7 +10,7 @@ import { ProductImage } from './product-image';
 import { nextReviewPrompt, type ReviewPromptItem } from '@/lib/services/review-eligibility';
 import { AddressLabelSelector } from './address-label-selector';
 
-type Customer = { id: string; name: string; mobile: string; email?: string };
+type Customer = { id: string; name: string; mobile: string; email?: string; email_verified_at?: string | null; auth_method?: string };
 type Address = {
   id: string;
   label?: string;
@@ -39,7 +39,9 @@ export function AccountView() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [reviewPrompt, setReviewPrompt] = useState<ReviewItem | null>(null);
-  const [mode, setMode] = useState<'login' | 'register'>('register');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'googleComplete'>('register');
+  const [googleConfigured, setGoogleConfigured] = useState(false);
+  const [googleProfile, setGoogleProfile] = useState<{ email: string; name: string } | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false),
@@ -48,10 +50,14 @@ export function AccountView() {
     [editingAddress, setEditingAddress] = useState<Address | null>(null),
     [addressLabelType, setAddressLabelType] = useState('');
   useEffect(() => {
-    setCheckout(
-      new URLSearchParams(window.location.search).get('returnTo') ===
-        'checkout',
-    );
+    const query = new URLSearchParams(window.location.search);
+    setCheckout(query.get('returnTo') === 'checkout');
+    if (query.get('googleComplete') === '1') {
+      setMode('googleComplete');
+      fetch('/api/account/google/pending').then(async r => r.ok ? await r.json() as { email: string; name?: string } : null).then(body => body && setGoogleProfile({ email: body.email, name: body.name || '' })).catch(() => setError('Google sign-in expired. Please try again.'));
+    }
+    if (query.get('authError')) setError('Google sign-in could not be completed. Please try again.');
+    fetch('/api/account/auth-config').then(async r => await r.json() as { googleConfigured?: boolean }).then(body => setGoogleConfigured(Boolean(body.googleConfigured))).catch(() => {});
   }, []);
   const load = useCallback(async () => {
     const account = await fetch('/api/account');
@@ -88,7 +94,8 @@ export function AccountView() {
     const form = event.currentTarget;
     const values = Object.fromEntries(new FormData(form));
     try {
-      const response = await fetch(`/api/account/${mode}`, {
+      const endpoint = mode === 'forgot' ? 'forgot-password' : mode === 'googleComplete' ? 'google/complete' : mode;
+      const response = await fetch(`/api/account/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
@@ -96,6 +103,11 @@ export function AccountView() {
       const body = (await response.json()) as { error?: string };
       if (!response.ok) {
         setError(body.error || 'Please check your details.');
+        return;
+      }
+      if (mode === 'forgot') {
+        setNotice('If an account matches that email, a reset link will be sent.');
+        setMode('login');
         return;
       }
       setLoading(true);
@@ -161,7 +173,7 @@ export function AccountView() {
         <section className="account-auth">
           <div>
             <p className="eyebrow">WOW RIGHT account</p>
-            <h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+            <h1>{mode === 'login' ? 'Welcome back' : mode === 'forgot' ? 'Forgot password' : mode === 'googleComplete' ? 'Complete your account' : 'Create your account'}</h1>
             <p>
               {checkout
                 ? 'Your cart is saved. Sign in or create an account, then continue straight to checkout.'
@@ -169,31 +181,39 @@ export function AccountView() {
             </p>
           </div>
           <form className="form-card account-auth-card" onSubmit={authenticate}>
-            <div className="auth-choice" role="tablist" aria-label="Choose account action">
+            {mode !== 'forgot' && mode !== 'googleComplete' && <div className="auth-choice" role="tablist" aria-label="Choose account action">
               <button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setError(''); }}>
                 <b>New here?</b><span>Create account</span>
               </button>
               <button type="button" role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError(''); }}>
                 <b>Already registered?</b><span>Log in</span>
               </button>
-            </div>
-            {mode === 'register' && (
+            </div>}
+            {googleConfigured && mode !== 'forgot' && mode !== 'googleComplete' && <>
+              <a className="button google-auth-button full" href={`/api/account/google/start${checkout ? '?returnTo=/checkout' : ''}`}><span aria-hidden="true">G</span>Continue with Google</a>
+              <div className="auth-divider"><span>or</span></div>
+            </>}
+            {mode === 'forgot' && <><h2>Reset your password</h2><p>Enter your registered email. We’ll send a secure link if an account matches it.</p></>}
+            {mode === 'googleComplete' && <><h2>One last detail</h2><p>Google verified your email. Add the mobile number we should use for delivery and WhatsApp updates.</p></>}
+            {(mode === 'register' || mode === 'googleComplete') && (
               <>
                 <label>
                   Full name
-                  <input name="name" required autoComplete="name" />
+                  <input name="name" required autoComplete="name" defaultValue={googleProfile?.name || ''} />
                 </label>
                 <label>
-                  Email <small>optional</small>
-                  <input name="email" type="email" autoComplete="email" />
+                  Email
+                  <input name="email" type="email" required readOnly={mode === 'googleComplete'} autoComplete="email" defaultValue={googleProfile?.email || ''} />
                 </label>
               </>
             )}
-            <label>
+            {mode === 'forgot' && <label>Email<input name="email" type="email" required autoComplete="email" /></label>}
+            {(mode === 'register' || mode === 'googleComplete') && <label>
               Mobile number
               <input name="phone" required inputMode="tel" autoComplete="tel" />
-            </label>
-            <label>
+            </label>}
+            {(mode === 'login') && <label>Email<input name="email" type="text" required autoComplete="username" placeholder="you@example.com" /><small>Legacy account without email? You may use your mobile number once, then add an email.</small></label>}
+            {mode !== 'forgot' && mode !== 'googleComplete' && <label>
               Password
               <input
                 name="password"
@@ -205,15 +225,22 @@ export function AccountView() {
                 }
               />
               {mode === 'register' && <small>Use at least 10 characters.</small>}
-            </label>
+            </label>}
             {error && <p className="form-error">{error}</p>}
+            {notice && <p className="form-success">{notice}</p>}
             <button className="button primary full" disabled={busy}>
               {busy
                 ? 'Please wait…'
-                : mode === 'login'
+                : mode === 'forgot'
+                  ? 'Send reset link'
+                  : mode === 'googleComplete'
+                    ? 'Finish account setup'
+                  : mode === 'login'
                   ? 'Sign in'
                   : 'Create account'}
             </button>
+            {mode === 'login' && <button type="button" className="auth-text-button" onClick={() => { setMode('forgot'); setError(''); }}>Forgot password?</button>}
+            {mode === 'forgot' && <button type="button" className="auth-text-button" onClick={() => { setMode('login'); setError(''); }}>Back to login</button>}
           </form>
         </section>
       </AppShell>
@@ -252,12 +279,25 @@ export function AccountView() {
             {notice}
           </p>
         )}
+        {(!customer.email || !customer.email_verified_at) && <section className="email-verification-card" role="status">
+          <div><b>{customer.email ? 'Verify your email to check out' : 'Add your email to continue'}</b><p>{customer.email ? `We sent a verification link to ${customer.email}.` : 'Email is required for receipts, order updates and password recovery.'}</p></div>
+          {customer.email ? <button className="button secondary" onClick={async () => { const r = await fetch('/api/account/resend-verification', { method: 'POST' }); const body = await r.json() as { emailSent?: boolean; error?: string }; setNotice(r.ok ? body.emailSent ? 'Verification email sent.' : 'Email delivery is not configured yet.' : body.error || 'Could not send verification email.'); }}>Resend verification</button> : null}
+        </section>}
         {checkout && (
           <Link className="button primary" href="/checkout">
             Continue to checkout →
           </Link>
         )}
         <div className="account-grid">
+          <section className="form-card">
+            <h2>Account details</h2>
+            <form onSubmit={async event => { event.preventDefault(); setBusy(true); setError(''); const form = new FormData(event.currentTarget); const r = await fetch('/api/account', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(form)) }); const body = await r.json() as { error?: string; emailSent?: boolean }; if (!r.ok) setError(body.error || 'Could not save account details.'); else { setNotice(body.emailSent ? 'Details saved. Check your email to verify it.' : 'Details saved.'); await load(); } setBusy(false); }}>
+              <label>Name<input name="name" required defaultValue={customer.name} /></label>
+              <label>Email<input name="email" type="email" required defaultValue={customer.email || ''} /></label>
+              <small>{customer.email_verified_at ? 'Verified email' : 'Verification required before checkout'}</small>
+              <button className="button secondary" disabled={busy}>Save account details</button>
+            </form>
+          </section>
           <section className="form-card">
             <h2>My Orders</h2>
             {reviewItems.length > 0 && <div className="review-reminder"><b>{reviewItems.length === 1 ? 'One product is ready for your review' : `${reviewItems.length} products are ready for review`}</b><span>Only delivered purchases can be reviewed.</span><button type="button" onClick={() => setReviewPrompt(reviewItems[0])}>Write a review</button></div>}
