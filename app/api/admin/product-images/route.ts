@@ -109,6 +109,12 @@ export async function POST(request: Request) {
         now,
       ),
     );
+    if (globalFinishId)
+      statements.push(
+        env.DB.prepare(
+          'UPDATE global_finishes SET reference_image_id=?,updated_at=? WHERE id=?',
+        ).bind(id, now, globalFinishId),
+      );
     await env.DB.batch(statements);
     uploadedKey = undefined;
     return Response.json({ id, url: `/api/product-images/${id}` });
@@ -166,6 +172,9 @@ export async function DELETE(request: Request) {
     const image = await imageRow(id);
     await assertCanRemoveMain(image);
     await env.DB.batch([
+      env.DB.prepare(
+        'UPDATE global_finishes SET reference_image_id=NULL,updated_at=? WHERE reference_image_id=?',
+      ).bind(new Date().toISOString(), id),
       env.DB.prepare(
         'UPDATE product_variants SET exact_image_id=NULL WHERE exact_image_id=?',
       ).bind(id),

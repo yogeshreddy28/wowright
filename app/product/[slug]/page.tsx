@@ -97,7 +97,12 @@ export default async function ProductPage({
         <span>{product.name}</span>
       </nav>
       <section className="product-detail">
-        <ProductGallery images={product.images} name={product.name} />
+        <ProductGallery
+          images={product.images}
+          name={product.name}
+          productId={product.id}
+          variants={product.variants}
+        />
         <div className="product-info">
           <p className="eyebrow">
             <Sparkles /> {product.category} ·{' '}
@@ -210,7 +215,12 @@ export default async function ProductPage({
           </div>
           <div className="product-grid">
             {related.map((item) => (
-              <ProductCard key={item.id} product={item} />
+              <ProductCard
+                key={item.id}
+                product={item}
+                density="shop"
+                placement="related"
+              />
             ))}
           </div>
         </section>

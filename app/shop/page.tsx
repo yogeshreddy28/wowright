@@ -114,7 +114,12 @@ export default async function Shop({
         {products.length ? (
           <div className="product-grid">
             {products.map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                density="shop"
+                placement="shop"
+              />
             ))}
           </div>
         ) : (

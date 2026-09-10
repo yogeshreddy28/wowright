@@ -18,9 +18,11 @@ import {
   Sparkles,
   Users,
   Wifi,
+  Palette,
 } from 'lucide-react';
 import { formatMoney } from '@/lib/services/pricing';
 import { AdminProducts } from '@/components/admin-products';
+import { AdminFinishes } from '@/components/admin-finishes';
 import { ProductionAdmin, DeliveryAdmin } from './operations-admin';
 import { QuotesAdmin } from './quotes-view';
 import { ReportsAdmin } from './reports-admin';
@@ -28,11 +30,15 @@ import { ReviewsAdmin } from './reviews-admin';
 import { AdminOverview } from './admin-overview';
 import { AdminOrders } from './admin-orders';
 import { EmptyWork } from './workflow-ui';
-import { OrderSoundButton, useAdminOrderNotifications } from './admin-order-notifier';
+import {
+  OrderSoundButton,
+  useAdminOrderNotifications,
+} from './admin-order-notifier';
 type View =
   | 'overview'
   | 'orders'
   | 'products'
+  | 'finishes'
   | 'customers'
   | 'conversations'
   | 'production'
@@ -50,6 +56,7 @@ const links: [View, string, typeof LayoutDashboard][] = [
   ['reports', 'Profit & analytics', BarChart3],
   ['reviews', 'Verified reviews', MessageSquare],
   ['products', 'Products', Boxes],
+  ['finishes', 'Finishes & Colours', Palette],
   ['customers', 'Customers', Users],
   ['conversations', 'Conversations', MessageSquare],
   ['settings', 'Settings', Settings],
@@ -130,7 +137,14 @@ export function AdminShell({
             >
               <Icon />
               {label}
-              {id === 'orders' && notifications.unseen > 0 && <span className="admin-nav-badge" aria-label={`${notifications.unseen} unseen orders`}>{notifications.unseen > 99 ? '99+' : notifications.unseen}</span>}
+              {id === 'orders' && notifications.unseen > 0 && (
+                <span
+                  className="admin-nav-badge"
+                  aria-label={`${notifications.unseen} unseen orders`}
+                >
+                  {notifications.unseen > 99 ? '99+' : notifications.unseen}
+                </span>
+              )}
             </Link>
           ))}
         </nav>
@@ -144,8 +158,25 @@ export function AdminShell({
             WOW RIGHT <b>/ {links.find(([id]) => id === view)?.[1]}</b>
           </span>
           <Link href="/">View store ↗</Link>
-          <OrderSoundButton enabled={notifications.soundEnabled} unlocked={notifications.audioUnlocked} unseen={notifications.unseen} message={notifications.audioMessage} onEnable={notifications.enableSound} onMute={notifications.muteSound} onTest={notifications.testSound} />
-          {view === 'orders' && notifications.unseen > 0 && <button type="button" className="admin-acknowledge-orders" onClick={notifications.acknowledgeAll}>Acknowledge {notifications.unseen} new {notifications.unseen === 1 ? 'order' : 'orders'}</button>}
+          <OrderSoundButton
+            enabled={notifications.soundEnabled}
+            unlocked={notifications.audioUnlocked}
+            unseen={notifications.unseen}
+            message={notifications.audioMessage}
+            onEnable={notifications.enableSound}
+            onMute={notifications.muteSound}
+            onTest={notifications.testSound}
+          />
+          {view === 'orders' && notifications.unseen > 0 && (
+            <button
+              type="button"
+              className="admin-acknowledge-orders"
+              onClick={notifications.acknowledgeAll}
+            >
+              Acknowledge {notifications.unseen} new{' '}
+              {notifications.unseen === 1 ? 'order' : 'orders'}
+            </button>
+          )}
           <select
             aria-label="Go to workspace"
             value={view}
@@ -500,8 +531,25 @@ function Customers({ data }: { data: any }) {
                 </td>
                 <td>{c.mobile}</td>
                 <td>{c.email || '—'}</td>
-                <td>{c.email ? (c.email_verified_at ? 'Verified' : 'Not verified') : 'Legacy · missing email'}</td>
-                <td>{String(c.auth_method || 'legacy').split(',').map((method: string) => method === 'google' ? 'Google' : method === 'email' ? 'Email' : 'Legacy').join(' + ')}</td>
+                <td>
+                  {c.email
+                    ? c.email_verified_at
+                      ? 'Verified'
+                      : 'Not verified'
+                    : 'Legacy · missing email'}
+                </td>
+                <td>
+                  {String(c.auth_method || 'legacy')
+                    .split(',')
+                    .map((method: string) =>
+                      method === 'google'
+                        ? 'Google'
+                        : method === 'email'
+                          ? 'Email'
+                          : 'Legacy',
+                    )
+                    .join(' + ')}
+                </td>
                 <td>{c.order_count}</td>
                 <td>{formatMoney(c.total_spent)}</td>
                 <td>
@@ -866,121 +914,254 @@ type ClassificationPreview = {
   related: Record<string, number>;
 };
 const dataResetOptions = [
-  ['orders', 'Orders', 'Test orders and their order items, timelines and access records'],
-  ['customers', 'Customers', 'Verified test customers with no preserved orders'],
-  ['production', 'Production, QC & packing', 'Test production allocations, checklists and packing progress'],
-  ['delivery', 'Delivery runs & proof records', 'Test batches, stops and delivery proof records'],
-  ['payments', 'Payments & reconciliation', 'Collections and direct costs belonging to test orders'],
+  [
+    'orders',
+    'Orders',
+    'Test orders and their order items, timelines and access records',
+  ],
+  [
+    'customers',
+    'Customers',
+    'Verified test customers with no preserved orders',
+  ],
+  [
+    'production',
+    'Production, QC & packing',
+    'Test production allocations, checklists and packing progress',
+  ],
+  [
+    'delivery',
+    'Delivery runs & proof records',
+    'Test batches, stops and delivery proof records',
+  ],
+  [
+    'payments',
+    'Payments & reconciliation',
+    'Collections and direct costs belonging to test orders',
+  ],
   ['reviews', 'Reviews', 'Reviews belonging to test order items'],
-  ['quotes', 'Custom requests & quotes', 'Verified test quote requests and upload records'],
-  ['conversations', 'Conversations', 'Verified test WOW Assistant conversations and messages'],
-  ['analytics', 'Store analytics', 'Verified test funnel events, excluding Companion analytics'],
-  ['companion_analytics', 'WOW Companion analytics', 'Verified test Companion interaction events'],
+  [
+    'quotes',
+    'Custom requests & quotes',
+    'Verified test quote requests and upload records',
+  ],
+  [
+    'conversations',
+    'Conversations',
+    'Verified test WOW Assistant conversations and messages',
+  ],
+  [
+    'analytics',
+    'Store analytics',
+    'Verified test funnel events, excluding Companion analytics',
+  ],
+  [
+    'companion_analytics',
+    'WOW Companion analytics',
+    'Verified test Companion interaction events',
+  ],
 ] as const;
 
 function DataResetCard() {
   const [preview, setPreview] = useState<DataResetPreview | null>(null);
-  const [classification, setClassification] = useState<ClassificationPreview | null>(null);
+  const [classification, setClassification] =
+    useState<ClassificationPreview | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [reviewing, setReviewing] = useState(false);
   const [confirmation, setConfirmation] = useState('');
-  const [classificationConfirmation, setClassificationConfirmation] = useState('');
+  const [classificationConfirmation, setClassificationConfirmation] =
+    useState('');
   const [reviewingClassification, setReviewingClassification] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<DataResetPreview | null>(null);
   const load = useCallback(async () => {
-    const response = await fetch('/api/admin/settings/data-reset', { cache: 'no-store' });
+    const response = await fetch('/api/admin/settings/data-reset', {
+      cache: 'no-store',
+    });
     if (!response.ok) return setError('The reset preview could not be loaded.');
-    const body = (await response.json()) as { preview: DataResetPreview; classification: ClassificationPreview };
+    const body = (await response.json()) as {
+      preview: DataResetPreview;
+      classification: ClassificationPreview;
+    };
     setPreview(body.preview);
     setClassification(body.classification);
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
   const allSelected = selected.length === dataResetOptions.length;
-  const selectedCount = selected.reduce((total, key) => total + Number(preview?.eligible[key] || 0), 0);
+  const selectedCount = selected.reduce(
+    (total, key) => total + Number(preview?.eligible[key] || 0),
+    0,
+  );
   function toggle(key: string) {
     setResult(null);
     setReviewing(false);
-    setSelected((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+    setSelected((current) =>
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key],
+    );
   }
   function prepareLaunch() {
     setSelected(dataResetOptions.map(([key]) => key));
     setResult(null);
     setReviewing(true);
     setConfirmation('');
-    document.getElementById('data-reset-confirmation')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document
+      .getElementById('data-reset-confirmation')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   async function runReset() {
-    setBusy(true); setError('');
+    setBusy(true);
+    setError('');
     try {
       const response = await fetch('/api/admin/settings/data-reset', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scopes: selected, confirmed: true, confirmationText: confirmation }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scopes: selected,
+          confirmed: true,
+          confirmationText: confirmation,
+        }),
       });
-      const body = (await response.json()) as { error?: string; result?: { before: DataResetPreview; after: DataResetPreview } };
-      if (!response.ok || !body.result) throw new Error(body.error || 'Reset failed.');
-      setResult(body.result.before); setPreview(body.result.after); setSelected([]); setReviewing(false); setConfirmation('');
+      const body = (await response.json()) as {
+        error?: string;
+        result?: { before: DataResetPreview; after: DataResetPreview };
+      };
+      if (!response.ok || !body.result)
+        throw new Error(body.error || 'Reset failed.');
+      setResult(body.result.before);
+      setPreview(body.result.after);
+      setSelected([]);
+      setReviewing(false);
+      setConfirmation('');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Reset failed safely.');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
   async function classifyCurrentData() {
     if (!classification) return;
-    setBusy(true); setError('');
+    setBusy(true);
+    setError('');
     try {
       const response = await fetch('/api/admin/settings/data-reset', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: classification.token, confirmationText: classificationConfirmation }),
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: classification.token,
+          confirmationText: classificationConfirmation,
+        }),
       });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(body.error || 'Classification failed.');
-      setReviewingClassification(false); setClassificationConfirmation('');
-      setNoticeForClassification('Current operational data is now marked as test and ready for reset.');
+      setReviewingClassification(false);
+      setClassificationConfirmation('');
+      setNoticeForClassification(
+        'Current operational data is now marked as test and ready for reset.',
+      );
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Classification failed safely.');
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Classification failed safely.',
+      );
       await load();
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
   const [classificationNotice, setNoticeForClassification] = useState('');
   const unclassifiedTotal = classification
-    ? Object.values(classification.primary).reduce((sum, value) => sum + value, 0)
+    ? Object.values(classification.primary).reduce(
+        (sum, value) => sum + value,
+        0,
+      )
     : 0;
   return (
-    <section className="admin-settings data-reset-card" id="data-reset-settings">
+    <section
+      className="admin-settings data-reset-card"
+      id="data-reset-settings"
+    >
       <div className="data-reset-heading">
-        <span><DatabaseBackup /></span>
+        <span>
+          <DatabaseBackup />
+        </span>
         <div>
           <p className="eyebrow">Settings · Data & Reset</p>
           <h2>Data & Reset</h2>
-          <p>Remove verified demo activity before launch without touching your catalogue or business setup.</p>
+          <p>
+            Remove verified demo activity before launch without touching your
+            catalogue or business setup.
+          </p>
         </div>
       </div>
       <div className="data-reset-warning" role="note">
-        <strong>This action permanently removes selected test/demo data.</strong>
-        <span>Product catalogue, settings and configuration remain unchanged.</span>
+        <strong>
+          This action permanently removes selected test/demo data.
+        </strong>
+        <span>
+          Product catalogue, settings and configuration remain unchanged.
+        </span>
       </div>
-      {!preview ? <p>Preparing a safe preview…</p> : (
+      {!preview ? (
+        <p>Preparing a safe preview…</p>
+      ) : (
         <>
           <div className="reset-preserved">
             <strong>Always preserved</strong>
-            <span>{preview.preserved.products} products · {preview.preserved.productImages} stored product images · {preview.preserved.categories} categories</span>
-            <span>Admin and delivery accounts · AI/API settings · WhatsApp and Meta configuration · business and production settings</span>
+            <span>
+              {preview.preserved.products} products ·{' '}
+              {preview.preserved.productImages} stored product images ·{' '}
+              {preview.preserved.categories} categories
+            </span>
+            <span>
+              Admin and delivery accounts · AI/API settings · WhatsApp and Meta
+              configuration · business and production settings
+            </span>
           </div>
           <div className="reset-option-list">
             {dataResetOptions.map(([key, label, description]) => (
-              <label key={key} className={selected.includes(key) ? 'selected' : ''}>
-                <input type="checkbox" checked={selected.includes(key)} onChange={() => toggle(key)} />
-                <span><strong>{label}</strong><small>{description}</small></span>
+              <label
+                key={key}
+                className={selected.includes(key) ? 'selected' : ''}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(key)}
+                  onChange={() => toggle(key)}
+                />
+                <span>
+                  <strong>{label}</strong>
+                  <small>{description}</small>
+                </span>
                 <b>{preview.eligible[key] || 0}</b>
               </label>
             ))}
           </div>
           <div className="reset-unclassified">
             <strong>Preserved because not marked as test</strong>
-            <span>{preview.unclassified.orders} orders · {preview.unclassified.customers} customers · {preview.unclassified.conversations} conversations · {preview.unclassified.analytics} analytics events · {preview.unclassified.deliveryRuns} delivery runs</span>
-            <button className="button secondary classify-button" type="button" disabled={!unclassifiedTotal} onClick={() => { setReviewingClassification(true); setClassificationConfirmation(''); setNoticeForClassification(''); }}>
+            <span>
+              {preview.unclassified.orders} orders ·{' '}
+              {preview.unclassified.customers} customers ·{' '}
+              {preview.unclassified.conversations} conversations ·{' '}
+              {preview.unclassified.analytics} analytics events ·{' '}
+              {preview.unclassified.deliveryRuns} delivery runs
+            </span>
+            <button
+              className="button secondary classify-button"
+              type="button"
+              disabled={!unclassifiedTotal}
+              onClick={() => {
+                setReviewingClassification(true);
+                setClassificationConfirmation('');
+                setNoticeForClassification('');
+              }}
+            >
               Mark Current Operational Data as Test
             </button>
           </div>
@@ -988,45 +1169,203 @@ function DataResetCard() {
             <div className="reset-confirmation classification-confirmation">
               <p className="eyebrow">Classification review</p>
               <h3>Mark Current Operational Data as Test</h3>
-              <p>This does not delete anything. It classifies only the exact operational snapshot shown below so it can be removed by a later reset.</p>
+              <p>
+                This does not delete anything. It classifies only the exact
+                operational snapshot shown below so it can be removed by a later
+                reset.
+              </p>
               <div className="classification-columns">
-                <div><strong>Records to classify</strong><ul>{Object.entries(classification.primary).filter(([, count]) => count > 0).map(([key, count]) => <li key={key}>{count} {key.replace(/([A-Z])/g, ' $1').toLowerCase()}</li>)}</ul></div>
-                <div><strong>Related records covered by those markers</strong><ul>{Object.entries(classification.related).filter(([, count]) => count > 0).map(([key, count]) => <li key={key}>{count} {key.replace(/([A-Z])/g, ' $1').toLowerCase()}</li>)}</ul></div>
+                <div>
+                  <strong>Records to classify</strong>
+                  <ul>
+                    {Object.entries(classification.primary)
+                      .filter(([, count]) => count > 0)
+                      .map(([key, count]) => (
+                        <li key={key}>
+                          {count} {key.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+                <div>
+                  <strong>Related records covered by those markers</strong>
+                  <ul>
+                    {Object.entries(classification.related)
+                      .filter(([, count]) => count > 0)
+                      .map(([key, count]) => (
+                        <li key={key}>
+                          {count} {key.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
               </div>
-              <p><strong>Never classified:</strong> products, images, prices, categories, variants/options, accounts, credentials, AI/API settings, WhatsApp/Meta settings or business/production configuration.</p>
-              <label>Type <strong>MARK AS TEST</strong> to confirm<input value={classificationConfirmation} onChange={(event) => setClassificationConfirmation(event.target.value)} autoComplete="off" /></label>
+              <p>
+                <strong>Never classified:</strong> products, images, prices,
+                categories, variants/options, accounts, credentials, AI/API
+                settings, WhatsApp/Meta settings or business/production
+                configuration.
+              </p>
+              <label>
+                Type <strong>MARK AS TEST</strong> to confirm
+                <input
+                  value={classificationConfirmation}
+                  onChange={(event) =>
+                    setClassificationConfirmation(event.target.value)
+                  }
+                  autoComplete="off"
+                />
+              </label>
               <div className="data-reset-actions">
-                <button type="button" className="button secondary" onClick={() => setReviewingClassification(false)} disabled={busy}>Cancel</button>
-                <button type="button" className="button danger-button" onClick={classifyCurrentData} disabled={busy || classificationConfirmation !== 'MARK AS TEST'}>{busy ? 'Classifying…' : 'Mark snapshot as test'}</button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => setReviewingClassification(false)}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="button danger-button"
+                  onClick={classifyCurrentData}
+                  disabled={
+                    busy || classificationConfirmation !== 'MARK AS TEST'
+                  }
+                >
+                  {busy ? 'Classifying…' : 'Mark snapshot as test'}
+                </button>
               </div>
             </div>
           )}
           <div className="data-reset-actions">
-            <button className="button secondary" type="button" disabled={!selected.length} onClick={() => setReviewing(true)}>Review selected reset</button>
-            <button className="button danger-button" type="button" onClick={prepareLaunch}>Prepare for Clean Launch</button>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={!selected.length}
+              onClick={() => setReviewing(true)}
+            >
+              Review selected reset
+            </button>
+            <button
+              className="button danger-button"
+              type="button"
+              onClick={prepareLaunch}
+            >
+              Prepare for Clean Launch
+            </button>
           </div>
         </>
       )}
       {reviewing && preview && (
         <div className="reset-confirmation" id="data-reset-confirmation">
           <p className="eyebrow">Final review</p>
-          <h3>{allSelected ? 'Prepare for Clean Launch' : 'Reset selected test data'}</h3>
-          <p><strong>{selectedCount} primary records</strong> are eligible across the selected sections. Related test-only child records are removed with their parent.</p>
-          <ul>{dataResetOptions.filter(([key]) => selected.includes(key)).map(([key, label]) => <li key={key}>{preview.eligible[key] || 0} {label.toLowerCase()}</li>)}</ul>
-          <p>Your {preview.preserved.products} products, product assets, categories, accounts and all configuration remain preserved.</p>
-          {allSelected && <label>Type <strong>RESET TEST DATA</strong> to confirm<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label>}
-          <label className="reset-check"><input type="checkbox" checked={confirmation === 'confirmed' || (allSelected && confirmation === 'RESET TEST DATA')} onChange={(event) => { if (!allSelected) setConfirmation(event.target.checked ? 'confirmed' : ''); }} disabled={allSelected} /> I reviewed what will be removed and preserved.</label>
+          <h3>
+            {allSelected
+              ? 'Prepare for Clean Launch'
+              : 'Reset selected test data'}
+          </h3>
+          <p>
+            <strong>{selectedCount} primary records</strong> are eligible across
+            the selected sections. Related test-only child records are removed
+            with their parent.
+          </p>
+          <ul>
+            {dataResetOptions
+              .filter(([key]) => selected.includes(key))
+              .map(([key, label]) => (
+                <li key={key}>
+                  {preview.eligible[key] || 0} {label.toLowerCase()}
+                </li>
+              ))}
+          </ul>
+          <p>
+            Your {preview.preserved.products} products, product assets,
+            categories, accounts and all configuration remain preserved.
+          </p>
+          {allSelected && (
+            <label>
+              Type <strong>RESET TEST DATA</strong> to confirm
+              <input
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                autoComplete="off"
+              />
+            </label>
+          )}
+          <label className="reset-check">
+            <input
+              type="checkbox"
+              checked={
+                confirmation === 'confirmed' ||
+                (allSelected && confirmation === 'RESET TEST DATA')
+              }
+              onChange={(event) => {
+                if (!allSelected)
+                  setConfirmation(event.target.checked ? 'confirmed' : '');
+              }}
+              disabled={allSelected}
+            />{' '}
+            I reviewed what will be removed and preserved.
+          </label>
           <div className="data-reset-actions">
-            <button type="button" className="button secondary" onClick={() => setReviewing(false)} disabled={busy}>Cancel</button>
-            <button type="button" className="button danger-button" onClick={runReset} disabled={busy || (allSelected ? confirmation !== 'RESET TEST DATA' : confirmation !== 'confirmed')}>
-              {busy ? 'Removing test data…' : allSelected ? 'Prepare for Clean Launch' : 'Permanently reset selected data'}
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => setReviewing(false)}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button danger-button"
+              onClick={runReset}
+              disabled={
+                busy ||
+                (allSelected
+                  ? confirmation !== 'RESET TEST DATA'
+                  : confirmation !== 'confirmed')
+              }
+            >
+              {busy
+                ? 'Removing test data…'
+                : allSelected
+                  ? 'Prepare for Clean Launch'
+                  : 'Permanently reset selected data'}
             </button>
           </div>
         </div>
       )}
-      {result && <div className="reset-success" role="status"><strong>Clean-up complete.</strong><span>Removed: {Object.entries(result.eligible).filter(([, count]) => count > 0).map(([key, count]) => `${count} ${key.replaceAll('_', ' ')}`).join(' · ') || 'No eligible records'}.</span><span>Catalogue and configuration checks passed in the preview.</span></div>}
-      {classificationNotice && <div className="reset-success" role="status"><strong>Classification complete.</strong><span>{classificationNotice}</span><span>Review the resettable counts, then use Prepare for Clean Launch when you are ready.</span></div>}
-      {error && <p className="form-error" role="alert">{error}</p>}
+      {result && (
+        <div className="reset-success" role="status">
+          <strong>Clean-up complete.</strong>
+          <span>
+            Removed:{' '}
+            {Object.entries(result.eligible)
+              .filter(([, count]) => count > 0)
+              .map(([key, count]) => `${count} ${key.replaceAll('_', ' ')}`)
+              .join(' · ') || 'No eligible records'}
+            .
+          </span>
+          <span>Catalogue and configuration checks passed in the preview.</span>
+        </div>
+      )}
+      {classificationNotice && (
+        <div className="reset-success" role="status">
+          <strong>Classification complete.</strong>
+          <span>{classificationNotice}</span>
+          <span>
+            Review the resettable counts, then use Prepare for Clean Launch when
+            you are ready.
+          </span>
+        </div>
+      )}
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
     </section>
   );
 }
@@ -1342,6 +1681,8 @@ export function AdminApp({ view = 'overview' }: { view?: View }) {
         <AdminOrders data={data} />
       ) : view === 'products' ? (
         <AdminProducts data={data} reload={load} />
+      ) : view === 'finishes' ? (
+        <AdminFinishes data={data} reload={load} />
       ) : view === 'production' ? (
         <ProductionAdmin data={data} reload={load} />
       ) : view === 'delivery' ? (

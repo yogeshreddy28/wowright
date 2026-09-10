@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { ProductCard } from '@/components/product-card';
+import { HomeDiscovery } from '@/components/home-discovery';
 import { faqs } from '@/lib/catalog';
 import {
   getBestSellingProducts,
@@ -28,6 +29,7 @@ export default async function Home() {
   const featuredProducts = featured.length ? featured : products.slice(0, 4);
   return (
     <AppShell>
+      <HomeDiscovery categories={categories} />
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">
@@ -73,11 +75,22 @@ export default async function Home() {
             View all products <ArrowRight />
           </Link>
         </div>
-        <div className="product-grid">
+        <div
+          className="product-grid featured-product-carousel"
+          aria-label="Featured products"
+        >
           {featuredProducts.map((product) => (
-            <ProductCard product={product} key={product.id} />
+            <ProductCard
+              product={product}
+              density="featured"
+              placement="homepage_featured"
+              key={product.id}
+            />
           ))}
         </div>
+        <Link className="mobile-see-all" href="/shop">
+          See all products <ArrowRight />
+        </Link>
       </section>
       <section className="custom-banner">
         <div className="custom-banner-visual">
@@ -104,30 +117,87 @@ export default async function Home() {
         </div>
       </section>
       <div className="ux-store-trust" aria-label="Shopping with WOW RIGHT">
-        <span><PackageCheck />Made to order</span>
-        <span><CheckCircle2 />Cash on Delivery</span>
-        <span><MapPin />Bengaluru delivery</span>
+        <span>
+          <PackageCheck />
+          Made to order
+        </span>
+        <span>
+          <CheckCircle2 />
+          Cash on Delivery
+        </span>
+        <span>
+          <MapPin />
+          Bengaluru delivery
+        </span>
       </div>
       <section className="section category-section">
-        <div className="section-heading"><div><p className="eyebrow">Browse your way</p><h2>Shop by category</h2></div></div>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Browse your way</p>
+            <h2>Shop by category</h2>
+          </div>
+        </div>
         <div className="category-grid">
           {categories.map((category) => (
             <Link key={category.id} href={`/category/${category.slug}`}>
-              <span>{category.productCount ? `${category.productCount} ${category.productCount === 1 ? 'product' : 'products'}` : 'Collection coming soon'}</span>
-              <h3>{category.name}</h3><p>{category.description || 'Explore available made-to-order products.'}</p><ArrowRight />
+              <span>
+                {category.productCount
+                  ? `${category.productCount} ${category.productCount === 1 ? 'product' : 'products'}`
+                  : 'Collection coming soon'}
+              </span>
+              <h3>{category.name}</h3>
+              <p>
+                {category.description ||
+                  'Explore available made-to-order products.'}
+              </p>
+              <ArrowRight />
             </Link>
           ))}
         </div>
       </section>
       <section className="how-section" id="how-it-works">
-        <div className="how-heading"><p className="eyebrow">Simple from the start</p><h2>From your choice<br />to your doorstep.</h2></div>
+        <div className="how-heading">
+          <p className="eyebrow">Simple from the start</p>
+          <h2>
+            From your choice
+            <br />
+            to your doorstep.
+          </h2>
+        </div>
         <div className="steps">
           {[
             [Lightbulb, '01', 'Choose', 'Pick a product or tell us your idea.'],
-            [SlidersHorizontal, '02', 'Customize', 'Choose your finish, size and personal details.'],
-            [Factory, '03', 'We Make It', 'Production begins after your order is confirmed.'],
-            [Truck, '04', 'Delivered', 'Track each real order stage from your account.'],
-          ].map(([Icon, number, title, description]) => { const StepIcon = Icon as typeof Lightbulb; return <div className="step" key={String(number)}><span>{String(number)}</span><div className="step-icon"><StepIcon /></div><h3>{String(title)}</h3><p>{String(description)}</p></div>; })}
+            [
+              SlidersHorizontal,
+              '02',
+              'Customize',
+              'Choose your finish, size and personal details.',
+            ],
+            [
+              Factory,
+              '03',
+              'We Make It',
+              'Production begins after your order is confirmed.',
+            ],
+            [
+              Truck,
+              '04',
+              'Delivered',
+              'Track each real order stage from your account.',
+            ],
+          ].map(([Icon, number, title, description]) => {
+            const StepIcon = Icon as typeof Lightbulb;
+            return (
+              <div className="step" key={String(number)}>
+                <span>{String(number)}</span>
+                <div className="step-icon">
+                  <StepIcon />
+                </div>
+                <h3>{String(title)}</h3>
+                <p>{String(description)}</p>
+              </div>
+            );
+          })}
         </div>
       </section>
       <section className="section products-section">
@@ -139,7 +209,7 @@ export default async function Home() {
         </div>
         <div className="product-grid">
           {products.slice(0, 4).map((product) => (
-            <ProductCard product={product} key={product.id} />
+            <ProductCard product={product} key={product.id} density="shop" />
           ))}
         </div>
       </section>
@@ -153,7 +223,7 @@ export default async function Home() {
         {bestSellers.length ? (
           <div className="product-grid">
             {bestSellers.map((product) => (
-              <ProductCard product={product} key={product.id} />
+              <ProductCard product={product} key={product.id} density="shop" />
             ))}
           </div>
         ) : (

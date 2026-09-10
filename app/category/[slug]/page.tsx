@@ -48,7 +48,12 @@ export default async function CategoryPage({
         )}
         <div className="product-grid">
           {products.map((product) => (
-            <ProductCard product={product} key={product.id} />
+            <ProductCard
+              product={product}
+              key={product.id}
+              density="shop"
+              placement="category"
+            />
           ))}
         </div>
       </section>

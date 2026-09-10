@@ -39,7 +39,9 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
     relatedResult,
     imageResult,
     variantResult,
+    variantImageResult,
     tagResult,
+    reviewResult,
     settingResult,
   ] = await env.DB.batch([
     env.DB.prepare(
@@ -58,7 +60,13 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
       `SELECT v.*,f.name finish_name,f.swatch,(SELECT '/api/product-images/'||i.id FROM product_images i WHERE i.global_finish_id=f.id ORDER BY i.sort_order LIMIT 1) reference_image,(SELECT '/api/product-images/'||i.id FROM product_images i WHERE i.id=v.exact_image_id) exact_image FROM product_variants v LEFT JOIN global_finishes f ON f.id=v.finish_id WHERE v.product_id IN (${marks}) ORDER BY v.sort_order,v.created_at`,
     ).bind(...ids),
     env.DB.prepare(
+      `SELECT v.product_id,pvi.variant_id,pvi.image_id,pvi.sort_order,'/api/product-images/'||pvi.image_id url FROM product_variant_images pvi JOIN product_variants v ON v.id=pvi.variant_id WHERE v.product_id IN (${marks}) ORDER BY pvi.sort_order,pvi.created_at`,
+    ).bind(...ids),
+    env.DB.prepare(
       `SELECT pt.product_id,t.name FROM product_tags pt JOIN tags t ON t.id=pt.tag_id WHERE pt.product_id IN (${marks}) ORDER BY t.name`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT r.product_id,COUNT(*) review_count,AVG(r.rating) rating FROM reviews r JOIN order_items oi ON oi.id=r.order_item_id JOIN orders o ON o.id=oi.order_id WHERE r.product_id IN (${marks}) AND r.status='published' AND o.status='delivered' AND o.is_test=0 GROUP BY r.product_id`,
     ).bind(...ids),
     env.DB.prepare(
       "SELECT key,value FROM settings WHERE key IN ('productDefaultMaterial','productDefaultLeadTime','productDefaultDeliveryNotes','productDefaultCareInstructions','productMadeToOrderNotice')",
@@ -81,6 +89,9 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
     priceAdjustment: Number(value.price_adjustment),
   }));
   return rows.map((row) => {
+    const review = (reviewResult.results as Row[]).find(
+      (item) => item.product_id === row.id,
+    );
     const options = (optionResult.results as Row[])
       .filter((option) => option.product_id === row.id)
       .map((option) => ({
@@ -176,32 +187,45 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
       },
       variants: (variantResult.results as Row[])
         .filter((variant) => variant.product_id === row.id)
-        .map((variant) => ({
-          id: String(variant.id),
-          name: String(variant.finish_name || variant.name),
-          finishId: variant.finish_id ? String(variant.finish_id) : undefined,
-          sellingPrice:
-            variant.selling_price == null
-              ? undefined
-              : Number(variant.selling_price),
-          originalPrice:
-            variant.original_price == null
-              ? undefined
-              : Number(variant.original_price),
-          priceAdjustment: Number(variant.price_adjustment || 0),
-          active: bool(variant.active),
-          availability: String(variant.availability || 'available') as
-            | 'available'
-            | 'temporarily_unavailable'
-            | 'discontinued',
-          exactImage: variant.exact_image
+        .map((variant) => {
+          const linkedImages = (variantImageResult.results as Row[])
+            .filter((image) => image.variant_id === variant.id)
+            .map((image) => String(image.url));
+          const legacyImage = variant.exact_image
             ? String(variant.exact_image)
-            : undefined,
-          referenceImage: variant.reference_image
-            ? String(variant.reference_image)
-            : undefined,
-          swatch: variant.swatch ? String(variant.swatch) : undefined,
-        })),
+            : undefined;
+          const exactImages = [legacyImage, ...linkedImages].filter(
+            (image, index, all): image is string =>
+              Boolean(image) && all.indexOf(image) === index,
+          );
+          return {
+            id: String(variant.id),
+            name: String(variant.finish_name || variant.name),
+            finishId: variant.finish_id ? String(variant.finish_id) : undefined,
+            sellingPrice:
+              variant.selling_price == null
+                ? undefined
+                : Number(variant.selling_price),
+            originalPrice:
+              variant.original_price == null
+                ? undefined
+                : Number(variant.original_price),
+            priceAdjustment: Number(variant.price_adjustment || 0),
+            active: bool(variant.active),
+            availability: String(variant.availability || 'available') as
+              | 'available'
+              | 'temporarily_unavailable'
+              | 'discontinued',
+            exactImage: exactImages[0],
+            exactImages,
+            referenceImage: variant.reference_image
+              ? String(variant.reference_image)
+              : undefined,
+            swatch: variant.swatch ? String(variant.swatch) : undefined,
+          };
+        }),
+      rating: review ? Number(review.rating) : undefined,
+      reviewCount: review ? Number(review.review_count) : 0,
     };
   });
 }

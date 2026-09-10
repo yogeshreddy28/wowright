@@ -9,6 +9,8 @@ import {
   getStartingPrice,
 } from '@/lib/services/pricing';
 import { emitCompanionEvent } from '@/lib/companion/events';
+import { isFinishReferenceOnly } from '@/lib/product-gallery';
+import { trackCommerce } from '@/lib/analytics-client';
 import { useStore } from './store-provider';
 export function ProductConfigurator({ product }: { product: Product }) {
   const initialSelections = useRef<Selection>(
@@ -50,6 +52,15 @@ export function ProductConfigurator({ product }: { product: Product }) {
     Object.entries(product.finishReferenceImages || {}).find(([finish]) =>
       Object.values(selections).some((value) => String(value) === finish),
     )?.[1] || selectedVariant?.referenceImage;
+  const referenceOnly = isFinishReferenceOnly(selectedVariant);
+  useEffect(() => {
+    if (!variantId) return;
+    window.dispatchEvent(
+      new CustomEvent('wow:finish-selected', {
+        detail: { productId: product.id, variantId },
+      }),
+    );
+  }, [product.id, variantId]);
   useEffect(() => {
     const viewTimer = setTimeout(() => {
       emitCompanionEvent('PRODUCT_VIEW', {
@@ -112,6 +123,21 @@ export function ProductConfigurator({ product }: { product: Product }) {
       }),
     }).catch(() => {});
   }
+  function selectVariant(id: string) {
+    setVariantId(id);
+    setError('');
+    const variant = availableVariants.find((item) => item.id === id);
+    trackCommerce(
+      'finish_selected',
+      {
+        value: variant?.name || '',
+        hasProductImage: Boolean(
+          variant?.exactImages?.length || variant?.exactImage,
+        ),
+      },
+      product.id,
+    );
+  }
   function add(destination?: '/cart' | '/checkout') {
     try {
       if (!purchasable)
@@ -167,7 +193,7 @@ export function ProductConfigurator({ product }: { product: Product }) {
                   value={variant.id}
                   checked={variantId === variant.id}
                   disabled={variant.availability !== 'available'}
-                  onChange={() => setVariantId(variant.id)}
+                  onChange={() => selectVariant(variant.id)}
                 />
                 <span>
                   {variant.swatch && (
@@ -270,25 +296,16 @@ export function ProductConfigurator({ product }: { product: Product }) {
           )}
         </fieldset>
       ))}
-      {(finishReference || selectedVariant?.exactImage) && (
+      {finishReference && referenceOnly && (
         <figure className="finish-reference">
           <img
-            src={selectedVariant?.exactImage || finishReference}
-            alt={
-              selectedVariant?.exactImage
-                ? `${selectedVariant.name} product view`
-                : 'Selected finish reference sample'
-            }
+            src={finishReference}
+            alt={`${selectedVariant?.name || 'Selected finish'} colour and material reference`}
           />
           <figcaption>
-            {selectedVariant?.exactImage ? (
-              <b>{selectedVariant.name}</b>
-            ) : (
-              <>
-                <b>Finish reference</b>Finish reference only. Actual appearance
-                may vary slightly depending on the model.
-              </>
-            )}
+            <b>Finish reference</b>
+            Colour/material reference only. Actual appearance may vary slightly
+            depending on the model and print.
           </figcaption>
         </figure>
       )}

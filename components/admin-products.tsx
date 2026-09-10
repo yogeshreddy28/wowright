@@ -38,6 +38,7 @@ type Variant = {
   enabled: boolean;
   availability: string;
   exactImageId?: string;
+  exactImageIds: string[];
   sortOrder: number;
 };
 const tabs = [
@@ -275,6 +276,8 @@ export function AdminProducts({ data, reload }: Props) {
         enabled: Boolean(v.active),
         availability: v.availability || 'available',
         exactImageId: v.exact_image_id || '',
+        exactImageIds:
+          v.exact_image_ids || (v.exact_image_id ? [v.exact_image_id] : []),
         sortOrder: v.sort_order || 0,
       })),
       images: p.images || [],
@@ -298,16 +301,37 @@ export function AdminProducts({ data, reload }: Props) {
     return value;
   }
   async function submitJson(mode: 'preview' | 'save') {
-    setError(''); setNotice('');
+    setError('');
+    setNotice('');
     let product: unknown;
-    try { product = JSON.parse(jsonText); } catch { setError('JSON syntax is invalid. Check commas, quotes and brackets.'); return; }
+    try {
+      product = JSON.parse(jsonText);
+    } catch {
+      setError('JSON syntax is invalid. Check commas, quotes and brackets.');
+      return;
+    }
     setBusy(true);
-    const response = await fetch(`/api/admin/products/${editor.id}/json`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, product }) });
-    const result = await response.json() as any;
+    const response = await fetch(`/api/admin/products/${editor.id}/json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, product }),
+    });
+    const result = (await response.json()) as any;
     setBusy(false);
-    if (!response.ok) { setError(result.errors?.join(' ') || result.error || 'JSON could not be validated.'); return; }
+    if (!response.ok) {
+      setError(
+        result.errors?.join(' ') ||
+          result.error ||
+          'JSON could not be validated.',
+      );
+      return;
+    }
     if (mode === 'preview') setJsonPreview(result.summary);
-    else { setNotice('Product JSON saved after server validation.'); await edit(editor.id); reload(); }
+    else {
+      setNotice('Product JSON saved after server validation.');
+      await edit(editor.id);
+      reload();
+    }
   }
   async function save(status?: 'draft' | 'published') {
     setBusy(true);
@@ -1167,18 +1191,142 @@ export function AdminProducts({ data, reload }: Props) {
               )}
               {tab === 'Advanced JSON' && (
                 <section className="product-json-editor">
-                  <div className="admin-warning"><b>Advanced tool</b><p>Normal editing is safer for everyday changes. JSON uses the same server validation, licence checks, pricing rules and publishing protections.</p></div>
-                  {!editor.id ? <p>Save this product as a draft before using the JSON editor.</p> : <>
-                    <label>Editable product JSON<textarea aria-label="Editable product JSON" spellCheck={false} value={jsonText} onChange={(event) => { setJsonText(event.target.value); setJsonPreview(null); }} /></label>
-                    <div className="json-utility-actions">
-                      <button type="button" className="button secondary" onClick={async () => { try { await navigator.clipboard.writeText(jsonText); setNotice('Copied'); } catch { setError('Copy was blocked. Select the JSON and use your keyboard copy shortcut.'); } }}>Copy JSON</button>
-                      <button type="button" className="button secondary" onClick={async () => { try { const text = await navigator.clipboard.readText(); setJsonText(text); setJsonPreview(null); setNotice('Pasted JSON. Validate it before saving.'); } catch { setError('Paste was blocked. Click in the editor and use your keyboard paste shortcut.'); } }}>Paste / Replace JSON</button>
-                      <button type="button" className="button secondary" onClick={() => { try { setJsonText(JSON.stringify(JSON.parse(jsonText), null, 2)); setJsonPreview(null); setNotice('JSON formatted.'); } catch { setError('JSON syntax is invalid, so it cannot be formatted.'); } }}>Format JSON</button>
-                      <button type="button" className="button secondary" onClick={() => { setJsonText(savedJsonText); setJsonPreview(null); setNotice('Reset to the currently saved product.'); }}>Reset to saved</button>
-                    </div>
-                    <div className="json-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => submitJson('preview')}>Validate & preview changes</button><button type="button" className="button primary" disabled={busy || !jsonPreview} onClick={() => { if (confirm('Save these validated JSON changes to this product?')) void submitJson('save'); }}>Save JSON changes</button></div>
-                    {jsonPreview && <div className="json-diff"><b>Validated change summary</b><p>{jsonPreview.changedFields.length ? jsonPreview.changedFields.join(', ') : 'No field changes detected.'}</p><span>Publishing: {jsonPreview.publishingStatus} · Variants: {jsonPreview.variants} · Base price: {formatMoney(jsonPreview.basePrice)}</span></div>}
-                  </>}
+                  <div className="admin-warning">
+                    <b>Advanced tool</b>
+                    <p>
+                      Normal editing is safer for everyday changes. JSON uses
+                      the same server validation, licence checks, pricing rules
+                      and publishing protections.
+                    </p>
+                  </div>
+                  {!editor.id ? (
+                    <p>
+                      Save this product as a draft before using the JSON editor.
+                    </p>
+                  ) : (
+                    <>
+                      <label>
+                        Editable product JSON
+                        <textarea
+                          aria-label="Editable product JSON"
+                          spellCheck={false}
+                          value={jsonText}
+                          onChange={(event) => {
+                            setJsonText(event.target.value);
+                            setJsonPreview(null);
+                          }}
+                        />
+                      </label>
+                      <div className="json-utility-actions">
+                        <button
+                          type="button"
+                          className="button secondary"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(jsonText);
+                              setNotice('Copied');
+                            } catch {
+                              setError(
+                                'Copy was blocked. Select the JSON and use your keyboard copy shortcut.',
+                              );
+                            }
+                          }}
+                        >
+                          Copy JSON
+                        </button>
+                        <button
+                          type="button"
+                          className="button secondary"
+                          onClick={async () => {
+                            try {
+                              const text = await navigator.clipboard.readText();
+                              setJsonText(text);
+                              setJsonPreview(null);
+                              setNotice(
+                                'Pasted JSON. Validate it before saving.',
+                              );
+                            } catch {
+                              setError(
+                                'Paste was blocked. Click in the editor and use your keyboard paste shortcut.',
+                              );
+                            }
+                          }}
+                        >
+                          Paste / Replace JSON
+                        </button>
+                        <button
+                          type="button"
+                          className="button secondary"
+                          onClick={() => {
+                            try {
+                              setJsonText(
+                                JSON.stringify(JSON.parse(jsonText), null, 2),
+                              );
+                              setJsonPreview(null);
+                              setNotice('JSON formatted.');
+                            } catch {
+                              setError(
+                                'JSON syntax is invalid, so it cannot be formatted.',
+                              );
+                            }
+                          }}
+                        >
+                          Format JSON
+                        </button>
+                        <button
+                          type="button"
+                          className="button secondary"
+                          onClick={() => {
+                            setJsonText(savedJsonText);
+                            setJsonPreview(null);
+                            setNotice('Reset to the currently saved product.');
+                          }}
+                        >
+                          Reset to saved
+                        </button>
+                      </div>
+                      <div className="json-actions">
+                        <button
+                          type="button"
+                          className="button secondary"
+                          disabled={busy}
+                          onClick={() => submitJson('preview')}
+                        >
+                          Validate & preview changes
+                        </button>
+                        <button
+                          type="button"
+                          className="button primary"
+                          disabled={busy || !jsonPreview}
+                          onClick={() => {
+                            if (
+                              confirm(
+                                'Save these validated JSON changes to this product?',
+                              )
+                            )
+                              void submitJson('save');
+                          }}
+                        >
+                          Save JSON changes
+                        </button>
+                      </div>
+                      {jsonPreview && (
+                        <div className="json-diff">
+                          <b>Validated change summary</b>
+                          <p>
+                            {jsonPreview.changedFields.length
+                              ? jsonPreview.changedFields.join(', ')
+                              : 'No field changes detected.'}
+                          </p>
+                          <span>
+                            Publishing: {jsonPreview.publishingStatus} ·
+                            Variants: {jsonPreview.variants} · Base price:{' '}
+                            {formatMoney(jsonPreview.basePrice)}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </section>
               )}
             </div>
@@ -1353,6 +1501,7 @@ function Pricing({ editor, set, finishes }: any) {
                 priceAdjustment: 0,
                 enabled: true,
                 availability: 'available',
+                exactImageIds: [],
                 sortOrder: editor.variants.length,
               },
             ])
@@ -1411,20 +1560,39 @@ function Pricing({ editor, set, finishes }: any) {
                 <option value="discontinued">Discontinued</option>
               </select>
             </label>
-            <label>
-              Exact finish image
-              <select
-                value={v.exactImageId || ''}
-                onChange={(e) => update(i, 'exactImageId', e.target.value)}
-              >
-                <option value="">Use global finish reference</option>
-                {editor.images.map((image: ImageRow, imageIndex: number) => (
-                  <option value={image.id} key={image.id}>
-                    Product image {imageIndex + 1}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <fieldset className="variant-image-picker">
+              <legend>Actual product photos for this finish</legend>
+              {editor.images.length ? (
+                <div>
+                  {editor.images.map((image: ImageRow, imageIndex: number) => (
+                    <label key={image.id}>
+                      <input
+                        type="checkbox"
+                        checked={(v.exactImageIds || []).includes(image.id)}
+                        onChange={(event) =>
+                          update(
+                            i,
+                            'exactImageIds',
+                            event.target.checked
+                              ? [...(v.exactImageIds || []), image.id]
+                              : (v.exactImageIds || []).filter(
+                                  (id: string) => id !== image.id,
+                                ),
+                          )
+                        }
+                      />
+                      <img src={image.url} alt="" />
+                      <span>Photo {imageIndex + 1}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <small>
+                  Upload product photos first. The default gallery remains
+                  visible until finish-specific photos are assigned.
+                </small>
+              )}
+            </fieldset>
             <label className="mini-toggle">
               Enabled
               <input

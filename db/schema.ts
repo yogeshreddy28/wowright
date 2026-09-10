@@ -493,79 +493,235 @@ export const settings = sqliteTable('settings', {
     .default(sql`CURRENT_TIMESTAMP`),
 });
 
-export const deliveryPeople = sqliteTable('delivery_people', {
-  id: text('id').primaryKey(), name: text('name').notNull(), mobile: text('mobile').notNull(),
-  passwordHash: text('password_hash').notNull(), active: integer('active').notNull().default(1), ...timestamps,
-}, t => [uniqueIndex('idx_delivery_people_mobile').on(t.mobile)]);
-export const productionAllocations = sqliteTable('production_allocations', {
-  id: text('id').primaryKey(), orderItemId: text('order_item_id').notNull().references(() => orderItems.id),
-  productionDate: text('production_date').notNull(), minutes: integer('minutes').notNull(),
-}, t => [index('idx_allocations_date').on(t.productionDate), index('idx_allocations_item').on(t.orderItemId)]);
-export const deliverySessions = sqliteTable('delivery_sessions', {
-  id: text('id').primaryKey(), personId: text('person_id').notNull().references(() => deliveryPeople.id),
-  tokenHash: text('token_hash').notNull(), expiresAt: text('expires_at').notNull(), createdAt: text('created_at').notNull(),
-}, t => [uniqueIndex('idx_delivery_session_token').on(t.tokenHash)]);
-export const deliveryBatches = sqliteTable('delivery_batches', {
-  id: text('id').primaryKey(), personId: text('person_id').notNull().references(() => deliveryPeople.id),
-  deliveryDate: text('delivery_date').notNull(), timeWindow: text('time_window').notNull(),
-  status: text('status').notNull().default('scheduled'), startedAt: text('started_at'),
-  isTest: integer('is_test', { mode: 'boolean' }).notNull().default(false), ...timestamps,
-}, t => [index('idx_delivery_batch_person').on(t.personId,t.deliveryDate)]);
-export const deliveryStops = sqliteTable('delivery_stops', {
-  id: text('id').primaryKey(), batchId: text('batch_id').notNull().references(() => deliveryBatches.id),
-  orderId: text('order_id').notNull().references(() => orders.id), sortOrder: integer('sort_order').notNull(),
-  status: text('status').notNull().default('pending'), availabilityNote: text('availability_note'), failureReason: text('failure_reason'),
-  arrivedAt: text('arrived_at'), completedAt: text('completed_at'),
-  openBoxAcceptedAt: text('open_box_accepted_at'), paymentRecordedAt: text('payment_recorded_at'), proofId: text('proof_id'),
-  ...timestamps,
-}, t => [uniqueIndex('idx_delivery_stop_batch_order').on(t.batchId,t.orderId), index('idx_delivery_stop_order').on(t.orderId)]);
-export const paymentCollections = sqliteTable('payment_collections', {
-  id: text('id').primaryKey(), orderId: text('order_id').notNull().references(() => orders.id),
-  personId: text('person_id').references(() => deliveryPeople.id), method: text('method').notNull(),
-  amountDue: integer('amount_due').notNull(), amountCollected: integer('amount_collected').notNull(),
-  settlementStatus: text('settlement_status').notNull().default('pending'), settledAt: text('settled_at'),
-  collectedAt: text('collected_at').notNull(),
-}, t => [uniqueIndex('idx_payment_collection_order').on(t.orderId)]);
-export const cashSettlements = sqliteTable('cash_settlements', {
-  id: text('id').primaryKey(),
-  personId: text('person_id').notNull().references(() => deliveryPeople.id),
-  amount: integer('amount').notNull(),
-  note: text('note'),
-  actor: text('actor').notNull().default('admin'),
-  createdAt: text('created_at').notNull(),
-}, t => [index('idx_cash_settlements_person_created').on(t.personId, t.createdAt)]);
-export const deliveryProofs = sqliteTable('delivery_proofs', {
-  id: text('id').primaryKey(), orderId: text('order_id').notNull().references(() => orders.id),
-  personId: text('person_id').notNull().references(() => deliveryPeople.id), storageKey: text('storage_key').notNull(),
-  contentType: text('content_type').notNull(), size: integer('size').notNull(), consentAt: text('consent_at').notNull(),
-  createdAt: text('created_at').notNull(),
-}, t => [index('idx_delivery_proof_order').on(t.orderId)]);
-export const deliveryOtps = sqliteTable('delivery_otps', {
-  id: text('id').primaryKey(), stopId: text('stop_id').notNull().references(() => deliveryStops.id, { onDelete: 'cascade' }),
-  orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }), personId: text('person_id').notNull().references(() => deliveryPeople.id),
-  nonce: text('nonce').notNull(), salt: text('salt').notNull(), codeHash: text('code_hash').notNull(), attempts: integer('attempts').notNull().default(0),
-  generationNumber: integer('generation_number').notNull().default(1), expiresAt: text('expires_at').notNull(), verifiedAt: text('verified_at'), consumedAt: text('consumed_at'), invalidatedAt: text('invalidated_at'),
-  overrideReason: text('override_reason'), overrideActor: text('override_actor'), generatedAt: text('generated_at').notNull(), updatedAt: text('updated_at').notNull(),
-}, t => [index('idx_delivery_otps_stop_generated').on(t.stopId, t.generatedAt), index('idx_delivery_otps_order').on(t.orderId)]);
-export const adminOrderAcknowledgements = sqliteTable('admin_order_acknowledgements', {
-  orderId: text('order_id').primaryKey().references(() => orders.id, { onDelete: 'cascade' }), acknowledgedAt: text('acknowledged_at').notNull(), actor: text('actor').notNull().default('admin'),
-});
-export const orderCosts = sqliteTable('order_costs', {
-  id: text('id').primaryKey(), orderId: text('order_id').notNull().references(() => orders.id),
-  category: text('category').notNull(), amount: integer('amount').notNull(), note: text('note'), createdAt: text('created_at').notNull(),
-}, t => [index('idx_costs_order').on(t.orderId)]);
-export const reviews = sqliteTable('reviews', {
-  id: text('id').primaryKey(), orderItemId: text('order_item_id').notNull().references(() => orderItems.id),
-  customerId: text('customer_id').notNull().references(() => customers.id), productId: text('product_id').notNull(),
-  rating: integer('rating').notNull(), body: text('body').notNull(), status: text('status').notNull().default('published'),
-  moderationReason: text('moderation_reason'), photoKey: text('photo_key'), photoType: text('photo_type'), ...timestamps,
-}, t => [uniqueIndex('idx_review_order_item').on(t.orderItemId), index('idx_review_product_status').on(t.productId,t.status)]);
-export const commerceOutbox = sqliteTable('commerce_outbox', {
-  id: text('id').primaryKey(), eventName: text('event_name').notNull(), orderId: text('order_id').references(() => orders.id),
-  payload: text('payload').notNull(), status: text('status').notNull().default('pending'),
-  attempts: integer('attempts').notNull().default(0), lastError: text('last_error'), deliveredAt: text('delivered_at'),
-  isTest: integer('is_test', { mode: 'boolean' }).notNull().default(false), createdAt: text('created_at').notNull(),
-}, t => [index('idx_outbox_status').on(t.status,t.createdAt)]);
+export const deliveryPeople = sqliteTable(
+  'delivery_people',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    mobile: text('mobile').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    active: integer('active').notNull().default(1),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('idx_delivery_people_mobile').on(t.mobile)],
+);
+export const productionAllocations = sqliteTable(
+  'production_allocations',
+  {
+    id: text('id').primaryKey(),
+    orderItemId: text('order_item_id')
+      .notNull()
+      .references(() => orderItems.id),
+    productionDate: text('production_date').notNull(),
+    minutes: integer('minutes').notNull(),
+  },
+  (t) => [
+    index('idx_allocations_date').on(t.productionDate),
+    index('idx_allocations_item').on(t.orderItemId),
+  ],
+);
+export const deliverySessions = sqliteTable(
+  'delivery_sessions',
+  {
+    id: text('id').primaryKey(),
+    personId: text('person_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('idx_delivery_session_token').on(t.tokenHash)],
+);
+export const deliveryBatches = sqliteTable(
+  'delivery_batches',
+  {
+    id: text('id').primaryKey(),
+    personId: text('person_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    deliveryDate: text('delivery_date').notNull(),
+    timeWindow: text('time_window').notNull(),
+    status: text('status').notNull().default('scheduled'),
+    startedAt: text('started_at'),
+    isTest: integer('is_test', { mode: 'boolean' }).notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [index('idx_delivery_batch_person').on(t.personId, t.deliveryDate)],
+);
+export const deliveryStops = sqliteTable(
+  'delivery_stops',
+  {
+    id: text('id').primaryKey(),
+    batchId: text('batch_id')
+      .notNull()
+      .references(() => deliveryBatches.id),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id),
+    sortOrder: integer('sort_order').notNull(),
+    status: text('status').notNull().default('pending'),
+    availabilityNote: text('availability_note'),
+    failureReason: text('failure_reason'),
+    arrivedAt: text('arrived_at'),
+    completedAt: text('completed_at'),
+    openBoxAcceptedAt: text('open_box_accepted_at'),
+    paymentRecordedAt: text('payment_recorded_at'),
+    proofId: text('proof_id'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('idx_delivery_stop_batch_order').on(t.batchId, t.orderId),
+    index('idx_delivery_stop_order').on(t.orderId),
+  ],
+);
+export const paymentCollections = sqliteTable(
+  'payment_collections',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id),
+    personId: text('person_id').references(() => deliveryPeople.id),
+    method: text('method').notNull(),
+    amountDue: integer('amount_due').notNull(),
+    amountCollected: integer('amount_collected').notNull(),
+    settlementStatus: text('settlement_status').notNull().default('pending'),
+    settledAt: text('settled_at'),
+    collectedAt: text('collected_at').notNull(),
+  },
+  (t) => [uniqueIndex('idx_payment_collection_order').on(t.orderId)],
+);
+export const cashSettlements = sqliteTable(
+  'cash_settlements',
+  {
+    id: text('id').primaryKey(),
+    personId: text('person_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    amount: integer('amount').notNull(),
+    note: text('note'),
+    actor: text('actor').notNull().default('admin'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_cash_settlements_person_created').on(t.personId, t.createdAt),
+  ],
+);
+export const deliveryProofs = sqliteTable(
+  'delivery_proofs',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id),
+    personId: text('person_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    storageKey: text('storage_key').notNull(),
+    contentType: text('content_type').notNull(),
+    size: integer('size').notNull(),
+    consentAt: text('consent_at').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [index('idx_delivery_proof_order').on(t.orderId)],
+);
+export const deliveryOtps = sqliteTable(
+  'delivery_otps',
+  {
+    id: text('id').primaryKey(),
+    stopId: text('stop_id')
+      .notNull()
+      .references(() => deliveryStops.id, { onDelete: 'cascade' }),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    personId: text('person_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    nonce: text('nonce').notNull(),
+    salt: text('salt').notNull(),
+    codeHash: text('code_hash').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    generationNumber: integer('generation_number').notNull().default(1),
+    expiresAt: text('expires_at').notNull(),
+    verifiedAt: text('verified_at'),
+    consumedAt: text('consumed_at'),
+    invalidatedAt: text('invalidated_at'),
+    overrideReason: text('override_reason'),
+    overrideActor: text('override_actor'),
+    generatedAt: text('generated_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [
+    index('idx_delivery_otps_stop_generated').on(t.stopId, t.generatedAt),
+    index('idx_delivery_otps_order').on(t.orderId),
+  ],
+);
+export const adminOrderAcknowledgements = sqliteTable(
+  'admin_order_acknowledgements',
+  {
+    orderId: text('order_id')
+      .primaryKey()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    acknowledgedAt: text('acknowledged_at').notNull(),
+    actor: text('actor').notNull().default('admin'),
+  },
+);
+export const orderCosts = sqliteTable(
+  'order_costs',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id),
+    category: text('category').notNull(),
+    amount: integer('amount').notNull(),
+    note: text('note'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [index('idx_costs_order').on(t.orderId)],
+);
+export const reviews = sqliteTable(
+  'reviews',
+  {
+    id: text('id').primaryKey(),
+    orderItemId: text('order_item_id')
+      .notNull()
+      .references(() => orderItems.id),
+    customerId: text('customer_id')
+      .notNull()
+      .references(() => customers.id),
+    productId: text('product_id').notNull(),
+    rating: integer('rating').notNull(),
+    body: text('body').notNull(),
+    status: text('status').notNull().default('published'),
+    moderationReason: text('moderation_reason'),
+    photoKey: text('photo_key'),
+    photoType: text('photo_type'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('idx_review_order_item').on(t.orderItemId),
+    index('idx_review_product_status').on(t.productId, t.status),
+  ],
+);
+export const commerceOutbox = sqliteTable(
+  'commerce_outbox',
+  {
+    id: text('id').primaryKey(),
+    eventName: text('event_name').notNull(),
+    orderId: text('order_id').references(() => orders.id),
+    payload: text('payload').notNull(),
+    status: text('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    deliveredAt: text('delivered_at'),
+    isTest: integer('is_test', { mode: 'boolean' }).notNull().default(false),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [index('idx_outbox_status').on(t.status, t.createdAt)],
+);
 export const aiProviderSettings = sqliteTable('ai_provider_settings', {
   id: text('id').primaryKey(),
   provider: text('provider').notNull().default('openai'),
@@ -674,6 +830,25 @@ export const productImages = sqliteTable(
   ],
 );
 
+export const productVariantImages = sqliteTable(
+  'product_variant_images',
+  {
+    id: text('id').primaryKey(),
+    variantId: text('variant_id')
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    imageId: text('image_id')
+      .notNull()
+      .references(() => productImages.id, { onDelete: 'cascade' }),
+    sortOrder: integer('sort_order').notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('idx_product_variant_images_pair').on(t.variantId, t.imageId),
+    index('idx_product_variant_images_variant').on(t.variantId, t.sortOrder),
+  ],
+);
+
 export const tags = sqliteTable(
   'tags',
   {
@@ -752,7 +927,9 @@ export const customerAuthTokens = sqliteTable(
     tokenHash: text('token_hash').notNull(),
     expiresAt: text('expires_at').notNull(),
     usedAt: text('used_at'),
-    createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
   },
   (t) => [
     uniqueIndex('idx_customer_auth_token_hash').on(t.tokenHash),
@@ -773,7 +950,9 @@ export const googleOauthStates = sqliteTable(
     pendingSubject: text('pending_subject'),
     completedAt: text('completed_at'),
     expiresAt: text('expires_at').notNull(),
-    createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
   },
   (t) => [uniqueIndex('idx_google_oauth_state_hash').on(t.stateHash)],
 );
@@ -802,8 +981,12 @@ export const orderSequences = sqliteTable('order_sequences', {
   value: integer('value').notNull().default(0),
 });
 
-export const abuseLimits = sqliteTable('abuse_limits', {
-  key: text('key').primaryKey(),
-  count: integer('count').notNull(),
-  resetAt: integer('reset_at').notNull(),
-},t=>[index('idx_abuse_reset').on(t.resetAt)]);
+export const abuseLimits = sqliteTable(
+  'abuse_limits',
+  {
+    key: text('key').primaryKey(),
+    count: integer('count').notNull(),
+    resetAt: integer('reset_at').notNull(),
+  },
+  (t) => [index('idx_abuse_reset').on(t.resetAt)],
+);

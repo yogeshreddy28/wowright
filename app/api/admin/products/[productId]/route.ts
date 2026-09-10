@@ -11,7 +11,7 @@ export async function GET(
   const [product, variants, images, tags, related] = await env.DB.batch([
     env.DB.prepare('SELECT * FROM products WHERE id=?').bind(productId),
     env.DB.prepare(
-      'SELECT * FROM product_variants WHERE product_id=? ORDER BY sort_order,created_at',
+      'SELECT v.*,(SELECT json_group_array(pvi.image_id) FROM product_variant_images pvi WHERE pvi.variant_id=v.id ORDER BY pvi.sort_order) exact_image_ids FROM product_variants v WHERE v.product_id=? ORDER BY v.sort_order,v.created_at',
     ).bind(productId),
     env.DB.prepare(
       "SELECT *,'/api/product-images/'||id url FROM product_images WHERE product_id=? ORDER BY CASE role WHEN 'main' THEN 0 ELSE 1 END,sort_order",
@@ -35,7 +35,11 @@ export async function GET(
         : JSON.parse(String(row.tags || '[]')),
       legacyImages: JSON.parse(String(row.images || '[]')),
       variants: (variants.results as Record<string, unknown>[]).map(
-        (variant) => ({ ...variant, enabled: Boolean(variant.active) }),
+        (variant) => ({
+          ...variant,
+          exact_image_ids: JSON.parse(String(variant.exact_image_ids || '[]')),
+          enabled: Boolean(variant.active),
+        }),
       ),
       images: images.results,
       relatedProductIds: related.results.map((item) =>

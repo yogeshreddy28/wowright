@@ -6,6 +6,8 @@ import {
   productAdminInput,
   slugifyProduct,
   validateProductForPublish,
+  validateProductFinishRelations,
+  productImageCount,
   type ProductAdminInput,
 } from '@/lib/services/product-admin';
 
@@ -88,17 +90,23 @@ async function saveRelations(
     db
       .prepare('UPDATE product_variants SET active=0 WHERE product_id=?')
       .bind(id),
+    db
+      .prepare(
+        'DELETE FROM product_variant_images WHERE variant_id IN (SELECT id FROM product_variants WHERE product_id=?)',
+      )
+      .bind(id),
     db.prepare('DELETE FROM product_tags WHERE product_id=?').bind(id),
     db.prepare('DELETE FROM related_products WHERE product_id=?').bind(id),
   ];
-  input.variants.forEach((variant, index) =>
+  input.variants.forEach((variant, index) => {
+    const variantId = variant.id || crypto.randomUUID();
     statements.push(
       db
         .prepare(
           'INSERT INTO product_variants (id,product_id,name,sku,price_adjustment,finish_id,selling_price,original_price,exact_image_id,active,availability,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,price_adjustment=excluded.price_adjustment,finish_id=excluded.finish_id,selling_price=excluded.selling_price,original_price=excluded.original_price,exact_image_id=excluded.exact_image_id,active=excluded.active,availability=excluded.availability,sort_order=excluded.sort_order,updated_at=excluded.updated_at',
         )
         .bind(
-          variant.id || crypto.randomUUID(),
+          variantId,
           id,
           variant.name,
           variant.sku?.trim().toUpperCase() ||
@@ -107,15 +115,24 @@ async function saveRelations(
           variant.finishId || null,
           variant.sellingPrice ?? null,
           variant.originalPrice ?? null,
-          variant.exactImageId || null,
+          variant.exactImageIds[0] || variant.exactImageId || null,
           Number(variant.enabled),
           variant.availability,
           index,
           now,
           now,
         ),
-    ),
-  );
+    );
+    variant.exactImageIds.forEach((imageId, imageIndex) =>
+      statements.push(
+        db
+          .prepare(
+            'INSERT INTO product_variant_images(id,variant_id,image_id,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+          )
+          .bind(crypto.randomUUID(), variantId, imageId, imageIndex, now, now),
+      ),
+    );
+  });
   [...new Set(input.tags)].forEach((name) => {
     const slug = slugifyProduct(name),
       tagId = `tag_${slug}`;
@@ -202,42 +219,9 @@ export async function persist(
     productId = id || crypto.randomUUID();
   const statements: D1PreparedStatement[] = [];
   let imageCount = input.images?.length || 0;
-  for (const variant of input.variants) {
-    if (
-      variant.id &&
-      (await db
-        .prepare('SELECT id FROM product_variants WHERE id=? AND product_id<>?')
-        .bind(variant.id, productId)
-        .first())
-    )
-      throw new Error('Invalid finish ownership.');
-    if (
-      variant.finishId &&
-      !(await db
-        .prepare('SELECT id FROM global_finishes WHERE id=? AND active=1')
-        .bind(variant.finishId)
-        .first())
-    )
-      throw new Error('Invalid global finish.');
-    if (
-      variant.exactImageId &&
-      !(await db
-        .prepare('SELECT id FROM product_images WHERE id=? AND product_id=?')
-        .bind(variant.exactImageId, productId)
-        .first())
-    )
-      throw new Error('Invalid exact product image.');
-  }
+  await validateProductFinishRelations(db, input, productId);
   if (id) {
-    const count = await db
-      .prepare(
-        "SELECT (SELECT COUNT(*) FROM product_images WHERE product_id=? AND role='main') normalized,(SELECT images FROM products WHERE id=?) legacy",
-      )
-      .bind(id, id)
-      .first<{ normalized: number; legacy: string }>();
-    imageCount =
-      Number(count?.normalized || 0) ||
-      (input.images ?? JSON.parse(count?.legacy || '[]')).length;
+    imageCount = await productImageCount(db, id);
   }
   const product = {
     ...input,

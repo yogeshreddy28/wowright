@@ -102,30 +102,46 @@ export async function POST(
         now,
       ),
     ];
-    const [variants, tags, related, images, options, optionValues] =
-      await env.DB.batch([
-        env.DB.prepare(
-          'SELECT * FROM product_variants WHERE product_id=? ORDER BY sort_order',
-        ).bind(productId),
-        env.DB.prepare(
-          'SELECT tag_id FROM product_tags WHERE product_id=?',
-        ).bind(productId),
-        env.DB.prepare(
-          'SELECT related_product_id,sort_order FROM related_products WHERE product_id=?',
-        ).bind(productId),
-        env.DB.prepare(
-          'SELECT * FROM product_images WHERE product_id=? ORDER BY sort_order',
-        ).bind(productId),
-        env.DB.prepare(
-          'SELECT * FROM product_options WHERE product_id=? ORDER BY sort_order',
-        ).bind(productId),
-        env.DB.prepare(
-          'SELECT v.* FROM product_option_values v JOIN product_options o ON o.id=v.option_id WHERE o.product_id=? ORDER BY v.sort_order',
-        ).bind(productId),
-      ]);
+    const [
+      variants,
+      tags,
+      related,
+      images,
+      options,
+      optionValues,
+      variantImages,
+    ] = await env.DB.batch([
+      env.DB.prepare(
+        'SELECT * FROM product_variants WHERE product_id=? ORDER BY sort_order',
+      ).bind(productId),
+      env.DB.prepare('SELECT tag_id FROM product_tags WHERE product_id=?').bind(
+        productId,
+      ),
+      env.DB.prepare(
+        'SELECT related_product_id,sort_order FROM related_products WHERE product_id=?',
+      ).bind(productId),
+      env.DB.prepare(
+        'SELECT * FROM product_images WHERE product_id=? ORDER BY sort_order',
+      ).bind(productId),
+      env.DB.prepare(
+        'SELECT * FROM product_options WHERE product_id=? ORDER BY sort_order',
+      ).bind(productId),
+      env.DB.prepare(
+        'SELECT v.* FROM product_option_values v JOIN product_options o ON o.id=v.option_id WHERE o.product_id=? ORDER BY v.sort_order',
+      ).bind(productId),
+      env.DB.prepare(
+        'SELECT pvi.* FROM product_variant_images pvi JOIN product_variants v ON v.id=pvi.variant_id WHERE v.product_id=? ORDER BY pvi.sort_order',
+      ).bind(productId),
+    ]);
     const imageIds = new Map(
       (images.results as Record<string, unknown>[]).map((image) => [
         String(image.id),
+        crypto.randomUUID(),
+      ]),
+    );
+    const variantIds = new Map(
+      (variants.results as Record<string, unknown>[]).map((variant) => [
+        String(variant.id),
         crypto.randomUUID(),
       ]),
     );
@@ -134,7 +150,7 @@ export async function POST(
         env.DB.prepare(
           'INSERT INTO product_variants (id,product_id,name,sku,price_adjustment,finish_id,selling_price,original_price,exact_image_id,active,availability,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         ).bind(
-          crypto.randomUUID(),
+          variantIds.get(String(v.id)),
           id,
           v.name,
           `${sku}-${String(index + 1).padStart(2, '0')}`,
@@ -186,6 +202,26 @@ export async function POST(
             now,
           ),
         ),
+      );
+    if (body.copyImages)
+      (variantImages.results as Record<string, unknown>[]).forEach(
+        (relation) => {
+          const variantId = variantIds.get(String(relation.variant_id));
+          const imageId = imageIds.get(String(relation.image_id));
+          if (!variantId || !imageId) return;
+          statements.push(
+            env.DB.prepare(
+              'INSERT INTO product_variant_images(id,variant_id,image_id,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+            ).bind(
+              crypto.randomUUID(),
+              variantId,
+              imageId,
+              relation.sort_order,
+              now,
+              now,
+            ),
+          );
+        },
       );
     for (const option of options.results as Record<string, unknown>[]) {
       const optionId = crypto.randomUUID();

@@ -63,6 +63,7 @@ export const productVariantInput = z.object({
   originalPrice: optionalInteger,
   priceAdjustment: z.coerce.number().int().default(0),
   exactImageId: z.string().optional().nullable(),
+  exactImageIds: z.array(z.string()).max(12).default([]),
   enabled: z.boolean().default(true),
   availability: z.enum(AVAILABILITY_STATUSES).default('available'),
   sortOrder: z.number().int().nonnegative().default(0),
@@ -122,9 +123,19 @@ export const productAdminInput = z.object({
 export type ProductAdminInput = z.infer<typeof productAdminInput>;
 
 export function assertEditableProductJson(value: unknown) {
-  const object = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  const blocked = ['id', 'createdAt', 'updatedAt', 'images', 'sourceFolder'].filter((field) => field in object);
-  if (blocked.length) throw new Error(`Remove read-only fields: ${blocked.join(', ')}.`);
+  const object =
+    value && typeof value === 'object'
+      ? (value as Record<string, unknown>)
+      : {};
+  const blocked = [
+    'id',
+    'createdAt',
+    'updatedAt',
+    'images',
+    'sourceFolder',
+  ].filter((field) => field in object);
+  if (blocked.length)
+    throw new Error(`Remove read-only fields: ${blocked.join(', ')}.`);
   return productAdminInput.parse(object);
 }
 
@@ -172,6 +183,55 @@ export function validateProductForPublish(
   )
     errors.push('Original price cannot be lower than selling price.');
   return errors;
+}
+
+export async function validateProductFinishRelations(
+  db: D1Database,
+  input: ProductAdminInput,
+  productId: string,
+) {
+  for (const variant of input.variants) {
+    if (
+      variant.id &&
+      (await db
+        .prepare('SELECT id FROM product_variants WHERE id=? AND product_id<>?')
+        .bind(variant.id, productId)
+        .first())
+    )
+      throw new Error('Invalid finish ownership.');
+    if (
+      variant.finishId &&
+      !(await db
+        .prepare('SELECT id FROM global_finishes WHERE id=? AND active=1')
+        .bind(variant.finishId)
+        .first())
+    )
+      throw new Error('Invalid global finish.');
+    for (const imageId of [
+      ...(variant.exactImageId ? [variant.exactImageId] : []),
+      ...variant.exactImageIds,
+    ]) {
+      if (
+        !(await db
+          .prepare('SELECT id FROM product_images WHERE id=? AND product_id=?')
+          .bind(imageId, productId)
+          .first())
+      )
+        throw new Error('Invalid product-specific finish image.');
+    }
+  }
+}
+
+export async function productImageCount(db: D1Database, productId: string) {
+  const count = await db
+    .prepare(
+      "SELECT (SELECT COUNT(*) FROM product_images WHERE product_id=? AND role='main') normalized,(SELECT images FROM products WHERE id=?) legacy",
+    )
+    .bind(productId, productId)
+    .first<{ normalized: number; legacy: string }>();
+  return (
+    Number(count?.normalized || 0) || JSON.parse(count?.legacy || '[]').length
+  );
 }
 
 // Explicit mapping prevents private/new fields from being lost by older editors.
@@ -233,6 +293,9 @@ export function productInputFromRow(
       originalPrice: v.original_price ?? undefined,
       priceAdjustment: v.price_adjustment,
       exactImageId: v.exact_image_id,
+      exactImageIds: Array.isArray(v.exact_image_ids)
+        ? v.exact_image_ids
+        : JSON.parse(String(v.exact_image_ids || '[]')),
       enabled: Boolean(v.active),
       availability: v.availability,
       sortOrder: v.sort_order,

@@ -33,6 +33,7 @@ describe('product Admin endpoint authentication', () => {
     expect((await categories.POST(post())).status).toBe(401);
     expect((await finishes.GET(get())).status).toBe(401);
     expect((await finishes.POST(post())).status).toBe(401);
+    expect((await finishes.PATCH(post())).status).toBe(401);
     expect((await images.POST(post())).status).toBe(401);
     expect((await bulkImport.POST(post())).status).toBe(401);
   });

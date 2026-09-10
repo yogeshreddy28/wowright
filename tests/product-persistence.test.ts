@@ -85,6 +85,51 @@ it('publishes with verified licence/main image, and preserves referenced finish 
       .get(result.id!)?.publishing_status,
   ).toBe('published');
 });
+it('validates and persists universal finish associations with multiple product photos', async () => {
+  const source = await persist(bindings.DB, input());
+  const variant = database.sqlite
+    .prepare('SELECT * FROM product_variants WHERE product_id=?')
+    .get(source.id!)!;
+  database.sqlite.exec(
+    "INSERT INTO global_finishes(id,slug,name,active) VALUES('finish-black','premium-black','Premium Black',1)",
+  );
+  database.sqlite
+    .prepare(
+      "INSERT INTO product_images(id,product_id,storage_key,original_name,content_type,size,role) VALUES('photo-one',?,'one','one.webp','image/webp',12,'gallery'),('photo-two',?,'two','two.webp','image/webp',12,'gallery')",
+    )
+    .run(source.id!, source.id!);
+  const row = database.sqlite
+    .prepare('SELECT * FROM products WHERE id=?')
+    .get(source.id!)!;
+  const updated = productAdminInput.parse(
+    productInputFromRow(row, [
+      {
+        ...variant,
+        finish_id: 'finish-black',
+        exact_image_ids: ['photo-one', 'photo-two'],
+      },
+    ]),
+  );
+  await persist(bindings.DB, updated, source.id);
+  expect(
+    database.sqlite
+      .prepare(
+        'SELECT image_id FROM product_variant_images WHERE variant_id=? ORDER BY sort_order',
+      )
+      .all(variant.id)
+      .map((item) => item.image_id),
+  ).toEqual(['photo-one', 'photo-two']);
+  await expect(
+    persist(
+      bindings.DB,
+      {
+        ...updated,
+        variants: [{ ...updated.variants[0], finishId: 'missing-finish' }],
+      },
+      source.id,
+    ),
+  ).rejects.toThrow('Invalid global finish');
+});
 it('rolls back the complete product when relation persistence fails', async () => {
   await expect(
     persist(bindings.DB, {

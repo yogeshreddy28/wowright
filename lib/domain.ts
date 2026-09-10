@@ -56,6 +56,8 @@ export type Product = {
     unit: string;
   };
   variants?: ProductVariant[];
+  rating?: number;
+  reviewCount?: number;
 };
 export type ProductVariant = {
   id: string;
@@ -68,6 +70,7 @@ export type ProductVariant = {
   active: boolean;
   availability: 'available' | 'temporarily_unavailable' | 'discontinued';
   exactImage?: string;
+  exactImages?: string[];
   referenceImage?: string;
   swatch?: string;
 };
