@@ -120,6 +120,13 @@
       "when": 1789056000000,
       "tag": "0016_universal_finish_images",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1789059600000,
+      "tag": "0017_normalize_catalog_finishes",
+      "breakpoints": true
     }
   ]
 }

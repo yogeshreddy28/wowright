@@ -91,7 +91,7 @@ it('validates and persists universal finish associations with multiple product p
     .prepare('SELECT * FROM product_variants WHERE product_id=?')
     .get(source.id!)!;
   database.sqlite.exec(
-    "INSERT INTO global_finishes(id,slug,name,active) VALUES('finish-black','premium-black','Premium Black',1)",
+    "INSERT INTO global_finishes(id,slug,name,active) VALUES('finish-test-obsidian','test-obsidian','Test Obsidian',1)",
   );
   database.sqlite
     .prepare(
@@ -105,7 +105,7 @@ it('validates and persists universal finish associations with multiple product p
     productInputFromRow(row, [
       {
         ...variant,
-        finish_id: 'finish-black',
+        finish_id: 'finish-test-obsidian',
         exact_image_ids: ['photo-one', 'photo-two'],
       },
     ]),
