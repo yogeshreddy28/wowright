@@ -263,7 +263,9 @@ export function AccountView() {
             className="button secondary"
             onClick={async () => {
               await fetch('/api/account/logout', { method: 'POST' });
-              location.reload();
+              // Drop transient OAuth/checkout query state so a signed-out customer
+              // always returns to the normal account entry screen.
+              location.replace('/account');
             }}
           >
             Sign out
