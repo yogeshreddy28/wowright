@@ -120,7 +120,357 @@ export const productAdminInput = z.object({
   variants: z.array(productVariantInput).max(100).default([]),
 });
 
+const productJsonEditableSchema = productAdminInput.omit({
+  id: true,
+  slugManual: true,
+  skuManual: true,
+  sourceFolder: true,
+  images: true,
+});
+const productJsonVariantPatchSchema = productVariantInput.partial();
+const productJsonPatchSchema = productJsonEditableSchema
+  .omit({ variants: true })
+  .partial()
+  .extend({
+    variants: z.array(productJsonVariantPatchSchema).max(100).optional(),
+  });
+
+type ProductJsonImage = {
+  id: string;
+  role: string;
+  altText: string;
+  sortOrder: number;
+};
+export type ProductJsonState = {
+  input: ProductAdminInput;
+  images: {
+    main: ProductJsonImage | null;
+    gallery: ProductJsonImage[];
+    legacyPaths: string[];
+  };
+};
+
 export type ProductAdminInput = z.infer<typeof productAdminInput>;
+
+const clearableStrings = new Set([
+  'shortDescription',
+  'description',
+  'leadTime',
+  'material',
+  'dimensionDisplayOverride',
+  'deliveryNotes',
+  'careInstructions',
+  'printProfileNotes',
+  'internalProductionNotes',
+  'seoTitle',
+  'seoDescription',
+]);
+const enumAliases: Record<string, Record<string, string>> = {
+  productType: { normal: 'normal', customizable: 'customizable' },
+  stockMode: {
+    made_to_order: 'made_to_order',
+    madetoorder: 'made_to_order',
+    quote_only: 'quote_only',
+    quoteonly: 'quote_only',
+    tracked: 'tracked',
+  },
+  dimensionUnit: { mm: 'mm', cm: 'cm', in: 'in', inch: 'in', inches: 'in' },
+  commercialLicenseStatus: {
+    unchecked: 'unchecked',
+    commercial_verified: 'commercial_verified',
+    commercialuseverified: 'commercial_verified',
+    personal_only: 'personal_only',
+    personaluseonly: 'personal_only',
+    restricted: 'restricted',
+    restrictedneedsreview: 'restricted',
+  },
+  supportDifficulty: {
+    easy: 'easy',
+    medium: 'medium',
+    difficult: 'difficult',
+  },
+  publishingStatus: { draft: 'draft', published: 'published' },
+  availability: {
+    available: 'available',
+    temporarily_unavailable: 'temporarily_unavailable',
+    temporarilyunavailable: 'temporarily_unavailable',
+    discontinued: 'discontinued',
+  },
+};
+
+function enumToken(value: unknown) {
+  return typeof value === 'string'
+    ? value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+    : value;
+}
+
+function normalizeEnum(field: string, value: unknown) {
+  if (value == null && field === 'supportDifficulty') return undefined;
+  const token = enumToken(value);
+  if (typeof token !== 'string') return value;
+  const compact = token.replaceAll('_', '');
+  return enumAliases[field]?.[token] ?? enumAliases[field]?.[compact] ?? token;
+}
+
+function canonicalVariant(variant: ProductAdminInput['variants'][number]) {
+  return {
+    id: variant.id || null,
+    finishId: variant.finishId || null,
+    name: variant.name,
+    sku: variant.sku || '',
+    sellingPrice: variant.sellingPrice ?? null,
+    originalPrice: variant.originalPrice ?? null,
+    priceAdjustment: variant.priceAdjustment,
+    enabled: variant.enabled,
+    availability: variant.availability,
+    exactImageId: variant.exactImageId || null,
+    exactImageIds: variant.exactImageIds,
+    sortOrder: variant.sortOrder,
+  };
+}
+
+/** The only field ordering used by both Product JSON export and import. */
+export function canonicalProductJson(state: ProductJsonState) {
+  const input = state.input;
+  return {
+    name: input.name,
+    categoryId: input.categoryId,
+    slug: input.slug || '',
+    sku: input.sku || '',
+    shortDescription: input.shortDescription,
+    description: input.description,
+    basePrice: input.basePrice,
+    compareAtPrice: input.compareAtPrice ?? null,
+    productType: input.productType || 'normal',
+    stockMode: input.stockMode,
+    leadTime: input.leadTime || '',
+    material: input.material || '',
+    width: input.width ?? null,
+    depth: input.depth ?? null,
+    height: input.height ?? null,
+    dimensionUnit: input.dimensionUnit,
+    dimensionDisplayOverride: input.dimensionDisplayOverride || '',
+    deliveryNotes: input.deliveryNotes || '',
+    careInstructions: input.careInstructions || '',
+    commercialLicenseStatus: input.commercialLicenseStatus,
+    estimatedPrintMinutes: input.estimatedPrintMinutes ?? null,
+    filamentGrams: input.filamentGrams ?? null,
+    supportDifficulty: input.supportDifficulty || null,
+    printProfileNotes: input.printProfileNotes || '',
+    internalProductionNotes: input.internalProductionNotes || '',
+    internalUnitCost: input.internalUnitCost ?? null,
+    seoTitle: input.seoTitle || '',
+    seoDescription: input.seoDescription || '',
+    publishingStatus: input.publishingStatus,
+    availability: input.availability,
+    featured: input.featured,
+    tags: input.tags,
+    relatedProductIds: input.relatedProductIds,
+    variants: input.variants.map(canonicalVariant),
+    images: state.images,
+  };
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return z.record(z.string(), z.unknown()).parse(value);
+}
+
+function productJsonWarnings(source: Record<string, unknown>) {
+  const warnings: string[] = [];
+  const known = new Set([
+    ...Object.keys(productJsonPatchSchema.shape),
+    'images',
+  ]);
+  for (const field of Object.keys(source))
+    if (!known.has(field))
+      warnings.push(
+        `Unknown field "${field}" was ignored because it is not part of the Product schema.`,
+      );
+  const variantKnown = new Set(
+    Object.keys(productJsonVariantPatchSchema.shape),
+  );
+  if (Array.isArray(source.variants))
+    source.variants.forEach((value, index) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+      for (const field of Object.keys(value))
+        if (!variantKnown.has(field))
+          warnings.push(
+            `Unknown field "variants.${index}.${field}" was ignored because it is not part of the Product schema.`,
+          );
+    });
+  return warnings;
+}
+
+function normalizePatchValues(source: Record<string, unknown>) {
+  const normalized: Record<string, unknown> = { ...source };
+  for (const field of clearableStrings)
+    if (field in normalized && normalized[field] === null)
+      normalized[field] = '';
+  for (const field of Object.keys(enumAliases))
+    if (field in normalized)
+      normalized[field] = normalizeEnum(field, normalized[field]);
+  if (Array.isArray(normalized.variants))
+    normalized.variants = normalized.variants.map((value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        return value;
+      const variant = { ...(value as Record<string, unknown>) };
+      if ('availability' in variant)
+        variant.availability = normalizeEnum(
+          'availability',
+          variant.availability,
+        );
+      return variant;
+    });
+  return normalized;
+}
+
+function normalizedName(value: unknown) {
+  return String(value || '')
+    .trim()
+    .toLowerCase();
+}
+
+function mergeVariantPatches(
+  patches: z.infer<typeof productJsonVariantPatchSchema>[],
+  existing: ProductAdminInput['variants'],
+  warnings: string[],
+) {
+  if (!patches.length) {
+    if (existing.length)
+      warnings.push(
+        'Variants cannot be removed in bulk through JSON and were preserved. Disable a finish explicitly or use the normal editor.',
+      );
+    return existing;
+  }
+  const merged = existing.map((variant) => ({ ...variant }));
+  patches.forEach((patch, patchIndex) => {
+    let index = patch.id
+      ? merged.findIndex((variant) => variant.id === patch.id)
+      : -1;
+    if (index < 0 && patch.finishId)
+      index = merged.findIndex(
+        (variant) => variant.finishId === patch.finishId,
+      );
+    if (index < 0 && patch.name) {
+      const matches = merged
+        .map((variant, candidate) => ({ variant, candidate }))
+        .filter(
+          ({ variant }) =>
+            normalizedName(variant.name) === normalizedName(patch.name),
+        );
+      if (matches.length === 1) index = matches[0].candidate;
+    }
+    if (
+      index < 0 &&
+      !patch.id &&
+      !patch.finishId &&
+      patches.length === existing.length &&
+      merged[patchIndex]
+    )
+      index = patchIndex;
+    if (index < 0 && !patch.id && !patch.finishId && existing.length === 1)
+      index = 0;
+
+    if (index >= 0) {
+      const current = merged[index];
+      const next = { ...current, ...patch };
+      next.id = current.id;
+      if (!patch.sku) {
+        next.sku = current.sku;
+        if ('sku' in patch)
+          warnings.push(
+            `Existing variant SKU for "${current.name}" cannot be cleared and was preserved.`,
+          );
+      }
+      merged[index] = productVariantInput.parse(next);
+      return;
+    }
+    merged.push(productVariantInput.parse(patch));
+  });
+  return merged;
+}
+
+/**
+ * Merge a partial, possibly GPT-authored document with the authoritative saved
+ * product. Missing keys preserve saved values; canonical output supplies all
+ * schema defaults and stable relationship identities.
+ */
+export function normalizeProductJson(
+  value: unknown,
+  existing: ProductJsonState,
+) {
+  const source = objectValue(value);
+  const blocked = [
+    'id',
+    'createdAt',
+    'updatedAt',
+    'sourceFolder',
+    'slugManual',
+    'skuManual',
+  ].filter((field) => field in source);
+  if (blocked.length)
+    throw new Error(`Remove read-only fields: ${blocked.join(', ')}.`);
+  const warnings = productJsonWarnings(source);
+  if (
+    'images' in source &&
+    JSON.stringify(source.images) !== JSON.stringify(existing.images)
+  )
+    warnings.push(
+      'Uploaded images are managed in the Images tab and were preserved.',
+    );
+  const normalized = normalizePatchValues(source);
+  delete normalized.images;
+  for (const key of Object.keys(normalized))
+    if (!(key in productJsonPatchSchema.shape)) delete normalized[key];
+  const parsedPatch = productJsonPatchSchema.parse(normalized);
+  if (Array.isArray(normalized.variants) && parsedPatch.variants) {
+    const rawVariants = normalized.variants as Record<string, unknown>[];
+    parsedPatch.variants = parsedPatch.variants.map((variant, index) => {
+      const raw = rawVariants[index];
+      return Object.fromEntries(
+        Object.keys(raw).map((key) => [
+          key,
+          variant[key as keyof typeof variant],
+        ]),
+      );
+    });
+  }
+  const patch = Object.fromEntries(
+    Object.keys(normalized).map((key) => [
+      key,
+      parsedPatch[key as keyof typeof parsedPatch],
+    ]),
+  ) as z.infer<typeof productJsonPatchSchema>;
+  const variants =
+    patch.variants === undefined
+      ? existing.input.variants
+      : mergeVariantPatches(patch.variants, existing.input.variants, warnings);
+  const merged = { ...existing.input, ...patch, variants };
+  if (!merged.slug) {
+    merged.slug = existing.input.slug;
+    warnings.push('The product slug cannot be cleared and was preserved.');
+  }
+  if (!merged.sku) {
+    merged.sku = existing.input.sku;
+    warnings.push('The product SKU cannot be cleared and was preserved.');
+  }
+  const input = productAdminInput.parse({
+    ...merged,
+    slugManual: true,
+    skuManual: true,
+  });
+  const document = canonicalProductJson({ input, images: existing.images });
+  const before = canonicalProductJson(existing);
+  const changedFields = Object.keys(document).filter(
+    (field) =>
+      JSON.stringify(document[field as keyof typeof document]) !==
+      JSON.stringify(before[field as keyof typeof before]),
+  );
+  return { input, document, warnings: [...new Set(warnings)], changedFields };
+}
 
 export function assertEditableProductJson(value: unknown) {
   const object =
@@ -308,6 +658,70 @@ export function productInputFromRow(
       availability: v.availability,
       sortOrder: v.sort_order,
     })),
+  };
+}
+
+/** Load the database state used by both canonical JSON export and import. */
+export async function loadProductJsonState(
+  db: D1Database,
+  productId: string,
+): Promise<ProductJsonState | null> {
+  const [product, variants, images, tags, related] = await db.batch([
+    db.prepare('SELECT * FROM products WHERE id=?').bind(productId),
+    db
+      .prepare(
+        'SELECT v.*,(SELECT json_group_array(pvi.image_id) FROM product_variant_images pvi WHERE pvi.variant_id=v.id ORDER BY pvi.sort_order) exact_image_ids FROM product_variants v WHERE v.product_id=? ORDER BY v.sort_order,v.created_at',
+      )
+      .bind(productId),
+    db
+      .prepare(
+        "SELECT id,role,alt_text,sort_order FROM product_images WHERE product_id=? ORDER BY CASE role WHEN 'main' THEN 0 ELSE 1 END,sort_order,id",
+      )
+      .bind(productId),
+    db
+      .prepare(
+        'SELECT t.name FROM tags t JOIN product_tags pt ON pt.tag_id=t.id WHERE pt.product_id=? ORDER BY t.name',
+      )
+      .bind(productId),
+    db
+      .prepare(
+        'SELECT related_product_id FROM related_products WHERE product_id=? ORDER BY sort_order',
+      )
+      .bind(productId),
+  ]);
+  const row = product.results[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  const relatedProductIds = related.results.map((item) =>
+    String((item as { related_product_id: string }).related_product_id),
+  );
+  const relationalTags = tags.results.map((item) =>
+    String((item as { name: string }).name),
+  );
+  const input = productAdminInput.parse(
+    productInputFromRow(
+      {
+        ...row,
+        tags: relationalTags.length ? JSON.stringify(relationalTags) : row.tags,
+      },
+      variants.results as Record<string, unknown>[],
+      relatedProductIds,
+    ),
+  );
+  const safeImages = (images.results as Record<string, unknown>[]).map(
+    (image) => ({
+      id: String(image.id),
+      role: String(image.role),
+      altText: String(image.alt_text || ''),
+      sortOrder: Number(image.sort_order || 0),
+    }),
+  );
+  return {
+    input,
+    images: {
+      main: safeImages.find((image) => image.role === 'main') || null,
+      gallery: safeImages.filter((image) => image.role !== 'main'),
+      legacyPaths: JSON.parse(String(row.images || '[]')),
+    },
   };
 }
 

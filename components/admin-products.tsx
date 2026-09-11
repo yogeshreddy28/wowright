@@ -161,6 +161,7 @@ export function AdminProducts({ data, reload }: Props) {
   const [jsonText, setJsonText] = useState('');
   const [savedJsonText, setSavedJsonText] = useState('');
   const [jsonPreview, setJsonPreview] = useState<any>(null);
+  const [jsonWarnings, setJsonWarnings] = useState<string[]>([]);
   async function loadMeta() {
     const [c, f, s] = (await Promise.all([
       fetch('/api/admin/categories').then((r) => r.json()),
@@ -296,9 +297,23 @@ export function AdminProducts({ data, reload }: Props) {
       supportDifficulty: value.supportDifficulty || undefined,
     };
   }
-  function editableJson() {
-    const { id: _id, ...value } = payload();
-    return value;
+  async function loadProductJson(id: string) {
+    setBusy(true);
+    setError('');
+    const response = await fetch(`/api/admin/products/${id}/json`, {
+      cache: 'no-store',
+    });
+    const result = (await response.json()) as any;
+    setBusy(false);
+    if (!response.ok) {
+      setError(result.error || 'Could not load the saved Product JSON.');
+      return;
+    }
+    const canonical = JSON.stringify(result.product, null, 2);
+    setJsonText(canonical);
+    setSavedJsonText(canonical);
+    setJsonPreview(null);
+    setJsonWarnings([]);
   }
   async function submitJson(mode: 'preview' | 'save') {
     setError('');
@@ -326,10 +341,18 @@ export function AdminProducts({ data, reload }: Props) {
       );
       return;
     }
-    if (mode === 'preview') setJsonPreview(result.summary);
-    else {
-      setNotice('Product JSON saved after server validation.');
+    const canonical = JSON.stringify(result.product, null, 2);
+    setJsonText(canonical);
+    setJsonWarnings(result.warnings || []);
+    if (mode === 'preview') {
+      setJsonPreview(result.summary);
+      setNotice('JSON normalized. Review the changes before saving.');
+    } else {
+      setSavedJsonText(canonical);
+      setJsonPreview(null);
+      setNotice('Product JSON saved and reloaded from the catalogue.');
       await edit(editor.id);
+      setTab('Advanced JSON');
       reload();
     }
   }
@@ -822,11 +845,8 @@ export function AdminProducts({ data, reload }: Props) {
                   className={tab === item ? 'active' : ''}
                   onClick={() => {
                     setTab(item);
-                    if (item === 'Advanced JSON') {
-                      setJsonText(JSON.stringify(editableJson(), null, 2));
-                      setSavedJsonText(JSON.stringify(editableJson(), null, 2));
-                      setJsonPreview(null);
-                    }
+                    if (item === 'Advanced JSON' && editor.id)
+                      void loadProductJson(editor.id);
                   }}
                   key={item}
                 >
@@ -1191,6 +1211,11 @@ export function AdminProducts({ data, reload }: Props) {
                       the same server validation, licence checks, pricing rules
                       and publishing protections.
                     </p>
+                    <p>
+                      You may paste only the fields you want to change. Missing
+                      fields keep their saved values; validation restores the
+                      complete canonical product document.
+                    </p>
                   </div>
                   {!editor.id ? (
                     <p>
@@ -1207,6 +1232,7 @@ export function AdminProducts({ data, reload }: Props) {
                           onChange={(event) => {
                             setJsonText(event.target.value);
                             setJsonPreview(null);
+                            setJsonWarnings([]);
                           }}
                         />
                       </label>
@@ -1235,6 +1261,7 @@ export function AdminProducts({ data, reload }: Props) {
                               const text = await navigator.clipboard.readText();
                               setJsonText(text);
                               setJsonPreview(null);
+                              setJsonWarnings([]);
                               setNotice(
                                 'Pasted JSON. Validate it before saving.',
                               );
@@ -1256,6 +1283,7 @@ export function AdminProducts({ data, reload }: Props) {
                                 JSON.stringify(JSON.parse(jsonText), null, 2),
                               );
                               setJsonPreview(null);
+                              setJsonWarnings([]);
                               setNotice('JSON formatted.');
                             } catch {
                               setError(
@@ -1272,6 +1300,7 @@ export function AdminProducts({ data, reload }: Props) {
                           onClick={() => {
                             setJsonText(savedJsonText);
                             setJsonPreview(null);
+                            setJsonWarnings([]);
                             setNotice('Reset to the currently saved product.');
                           }}
                         >
@@ -1316,6 +1345,16 @@ export function AdminProducts({ data, reload }: Props) {
                             Variants: {jsonPreview.variants} · Base price:{' '}
                             {formatMoney(jsonPreview.basePrice)}
                           </span>
+                        </div>
+                      )}
+                      {!!jsonWarnings.length && (
+                        <div className="admin-warning" role="status">
+                          <b>Normalized with warnings</b>
+                          <ul>
+                            {jsonWarnings.map((warning) => (
+                              <li key={warning}>{warning}</li>
+                            ))}
+                          </ul>
                         </div>
                       )}
                     </>
