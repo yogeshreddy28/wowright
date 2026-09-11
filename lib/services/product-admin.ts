@@ -190,7 +190,15 @@ export async function validateProductFinishRelations(
   input: ProductAdminInput,
   productId: string,
 ) {
+  const seenFinishes = new Set<string>();
   for (const variant of input.variants) {
+    if (variant.finishId) {
+      if (seenFinishes.has(variant.finishId))
+        throw new Error(
+          'Each universal finish can only be added once to a product.',
+        );
+      seenFinishes.add(variant.finishId);
+    }
     if (
       variant.id &&
       (await db

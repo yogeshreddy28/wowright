@@ -12,6 +12,14 @@ import {
 } from '@/lib/services/product-admin';
 
 type Row = Record<string, unknown>;
+type VariantRow = {
+  id: string;
+  product_id: string;
+  finish_id: string | null;
+  name: string;
+  sku: string;
+};
+type VariantSkuOwner = VariantRow & { product_name: string };
 
 async function uniqueSlug(
   db: D1Database,
@@ -48,6 +56,13 @@ async function uniqueSku(
       .first();
     if (found) throw new Error('That SKU is already used by another product.');
     return value;
+  }
+  if (excludeId) {
+    const current = await db
+      .prepare('SELECT sku FROM products WHERE id=?')
+      .bind(excludeId)
+      .first<{ sku: string | null }>();
+    if (current?.sku) return current.sku;
   }
   const prefix = categorySkuPrefix(categorySlug);
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -86,6 +101,61 @@ async function saveRelations(
   input: ProductAdminInput,
   now: string,
 ) {
+  const [existingResult, ownerResult] = await db.batch([
+    db
+      .prepare(
+        'SELECT id,product_id,finish_id,name,sku FROM product_variants WHERE product_id=?',
+      )
+      .bind(id),
+    db.prepare(
+      'SELECT v.id,v.product_id,v.finish_id,v.name,v.sku,p.name product_name FROM product_variants v JOIN products p ON p.id=v.product_id',
+    ),
+  ]);
+  const existing = existingResult.results as VariantRow[];
+  const owners = ownerResult.results as VariantSkuOwner[];
+  const existingById = new Map(existing.map((row) => [row.id, row]));
+  const existingByFinish = new Map(
+    existing
+      .filter((row) => row.finish_id)
+      .map((row) => [row.finish_id as string, row]),
+  );
+  const ownerBySku = new Map(
+    owners.map((row) => [row.sku.trim().toUpperCase(), row]),
+  );
+  const claimed = new Map<string, { id: string; name: string }>();
+  const resolvedVariants = input.variants.map((variant, index) => {
+    const matched = variant.id
+      ? existingById.get(variant.id)
+      : variant.finishId
+        ? existingByFinish.get(variant.finishId)
+        : undefined;
+    const variantId = matched?.id || variant.id || crypto.randomUUID();
+    const requestedSku = variant.sku?.trim().toUpperCase();
+    let variantSku = matched?.sku.trim().toUpperCase() || requestedSku;
+    if (!variantSku) {
+      for (let suffix = index + 1; suffix < 1000; suffix++) {
+        const candidate = `${sku}-${String(suffix).padStart(2, '0')}`;
+        if (!ownerBySku.has(candidate) && !claimed.has(candidate)) {
+          variantSku = candidate;
+          break;
+        }
+      }
+      if (!variantSku)
+        throw new Error(`Could not generate a unique SKU for ${variant.name}.`);
+    }
+    const owner = ownerBySku.get(variantSku);
+    if (owner && owner.id !== variantId)
+      throw new Error(
+        `SKU ${variantSku} is already used by ${owner.product_name} / ${owner.name}. Choose another SKU.`,
+      );
+    const inputOwner = claimed.get(variantSku);
+    if (inputOwner && inputOwner.id !== variantId)
+      throw new Error(
+        `SKU ${variantSku} is already used by ${input.name} / ${inputOwner.name}. Choose another SKU.`,
+      );
+    claimed.set(variantSku, { id: variantId, name: variant.name });
+    return { variant, variantId, variantSku, index };
+  });
   const statements: D1PreparedStatement[] = [
     db
       .prepare('UPDATE product_variants SET active=0 WHERE product_id=?')
@@ -98,8 +168,7 @@ async function saveRelations(
     db.prepare('DELETE FROM product_tags WHERE product_id=?').bind(id),
     db.prepare('DELETE FROM related_products WHERE product_id=?').bind(id),
   ];
-  input.variants.forEach((variant, index) => {
-    const variantId = variant.id || crypto.randomUUID();
+  resolvedVariants.forEach(({ variant, variantId, variantSku, index }) => {
     statements.push(
       db
         .prepare(
@@ -109,8 +178,7 @@ async function saveRelations(
           variantId,
           id,
           variant.name,
-          variant.sku?.trim().toUpperCase() ||
-            `${sku}-${String(index + 1).padStart(2, '0')}`,
+          variantSku,
           variant.priceAdjustment,
           variant.finishId || null,
           variant.sellingPrice ?? null,

@@ -14,6 +14,7 @@ vi.mock('@/lib/admin-auth', () => ({
     r.headers.get('x-isolated-test-admin') === 'yes',
 }));
 import { persist } from '@/app/api/admin/products/route';
+import { PATCH as updateProduct } from '@/app/api/admin/products/route';
 import { POST as duplicate } from '@/app/api/admin/products/[productId]/duplicate/route';
 import { PUT as configure } from '@/app/api/admin/products/[productId]/configuration/route';
 import {
@@ -143,6 +144,80 @@ it('rolls back the complete product when relation persistence fails', async () =
   expect(
     database.sqlite.prepare('SELECT COUNT(*) n FROM products').get()?.n,
   ).toBe(0);
+});
+it('preserves variant identity and SKU when a stale editor resubmits universal finishes', async () => {
+  database.sqlite.exec(
+    "INSERT INTO global_finishes(id,slug,name,active) VALUES('finish-test-black','test-black','Test Black',1),('finish-test-copper','test-copper','Test Copper',1),('finish-test-white','test-white','Test White',1)",
+  );
+  const stale = productAdminInput.parse({
+    ...input(),
+    variants: [
+      { name: 'Test Black', finishId: 'finish-test-black', sellingPrice: 599 },
+      { name: 'Test Copper', finishId: 'finish-test-copper', sellingPrice: 649 },
+    ],
+  });
+  const source = await persist(bindings.DB, stale);
+  const before = database.sqlite
+    .prepare(
+      'SELECT id,finish_id,sku FROM product_variants WHERE product_id=? ORDER BY sort_order',
+    )
+    .all(source.id!) as { id: string; finish_id: string; sku: string }[];
+  await persist(
+    bindings.DB,
+    productAdminInput.parse({
+      ...stale,
+      variants: [
+        ...stale.variants,
+        { name: 'Test White', finishId: 'finish-test-white', sellingPrice: 629 },
+      ],
+    }),
+    source.id,
+  );
+  const after = database.sqlite
+    .prepare(
+      'SELECT id,finish_id,sku FROM product_variants WHERE product_id=? ORDER BY sort_order',
+    )
+    .all(source.id!) as { id: string; finish_id: string; sku: string }[];
+  expect(after).toHaveLength(3);
+  expect(after.slice(0, 2)).toEqual(before);
+  expect(after[2]?.sku).toBe(`${source.sku}-03`);
+});
+it('rejects a duplicate variant SKU before D1 with the owning product and finish', async () => {
+  const source = await persist(
+    bindings.DB,
+    productAdminInput.parse({
+      ...input(),
+      name: 'First fixture',
+      variants: [{ name: 'Black', sku: 'WR-SHARED-01', sellingPrice: 599 }],
+    }),
+  );
+  const response = await updateProduct(
+    new Request('http://local/api/admin/products', {
+      method: 'PATCH',
+      headers: {
+        'x-isolated-test-admin': 'yes',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...input(),
+        id: source.id,
+        name: 'First fixture',
+        variants: [
+          { name: 'Copper', sku: 'WR-SHARED-01', sellingPrice: 649 },
+        ],
+      }),
+    }),
+  );
+  const body = (await response.json()) as { error: string };
+  expect(response.status).toBe(400);
+  expect(body.error).toBe(
+    'SKU WR-SHARED-01 is already used by First fixture / Black. Choose another SKU.',
+  );
+  expect(
+    database.sqlite
+      .prepare('SELECT COUNT(*) n FROM product_variants WHERE product_id=?')
+      .get(source.id!)?.n,
+  ).toBe(1);
 });
 it('duplicates options, prices and safe image references as a new draft', async () => {
   const source = await persist(bindings.DB, {

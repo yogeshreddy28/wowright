@@ -350,14 +350,7 @@ export function AdminProducts({ data, reload }: Props) {
     }
     setNotice(status === 'published' ? 'Product published.' : 'Draft saved.');
     reload();
-    if (!editor.id) await edit(d.id);
-    else
-      setEditor((current: any) => ({
-        ...current,
-        slug: d.slug || current.slug,
-        sku: d.sku || current.sku,
-        publishingStatus: status || current.publishingStatus,
-      }));
+    await edit(d.id || editor.id);
   }
   async function duplicate(product: any) {
     if (!confirm(`Duplicate ${product.name} as a new draft?`)) return;
