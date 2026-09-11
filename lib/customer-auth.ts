@@ -1,7 +1,10 @@
-import { pbkdf2 } from 'node:crypto';
+import { pbkdf2, scrypt } from 'node:crypto';
 
 const encoder = new TextEncoder();
-const PASSWORD_ITERATIONS = 210_000;
+const SCRYPT_N = 32_768;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 
 function bytesToBase64(bytes: Uint8Array) {
   let value = '';
@@ -33,20 +36,62 @@ async function derivePassword(
     });
   });
 }
+async function deriveScrypt(password: string, salt: Uint8Array) {
+  return new Promise<Uint8Array>((resolve, reject) => {
+    scrypt(
+      password,
+      salt,
+      32,
+      {
+        N: SCRYPT_N,
+        r: SCRYPT_R,
+        p: SCRYPT_P,
+        maxmem: SCRYPT_MAX_MEMORY,
+      },
+      (error, derivedKey) => {
+        if (error) reject(error);
+        else resolve(Uint8Array.from(derivedKey));
+      },
+    );
+  });
+}
 export async function hashCustomerPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const hash = await derivePassword(password, salt, PASSWORD_ITERATIONS);
-  return `pbkdf2_sha256$${PASSWORD_ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
+  const hash = await deriveScrypt(password, salt);
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
 }
 export async function verifyCustomerPassword(password: string, stored: string) {
-  const [algorithm, count, saltValue, expectedValue] = stored.split('$');
-  if (algorithm !== 'pbkdf2_sha256' || !count || !saltValue || !expectedValue)
-    return false;
-  const actual = await derivePassword(
-    password,
-    base64ToBytes(saltValue),
-    Number(count),
-  );
+  const parts = stored.split('$');
+  let actual: Uint8Array;
+  let expectedValue: string | undefined;
+  if (parts[0] === 'scrypt') {
+    const [, n, r, p, saltValue, encodedExpected] = parts;
+    if (
+      Number(n) !== SCRYPT_N ||
+      Number(r) !== SCRYPT_R ||
+      Number(p) !== SCRYPT_P ||
+      !saltValue ||
+      !encodedExpected
+    )
+      return false;
+    actual = await deriveScrypt(password, base64ToBytes(saltValue));
+    expectedValue = encodedExpected;
+  } else {
+    const [algorithm, count, saltValue, encodedExpected] = parts;
+    if (
+      algorithm !== 'pbkdf2_sha256' ||
+      !count ||
+      !saltValue ||
+      !encodedExpected
+    )
+      return false;
+    actual = await derivePassword(
+      password,
+      base64ToBytes(saltValue),
+      Number(count),
+    );
+    expectedValue = encodedExpected;
+  }
   const expected = base64ToBytes(expectedValue);
   if (actual.length !== expected.length) return false;
   let difference = 0;

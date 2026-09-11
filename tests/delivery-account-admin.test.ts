@@ -57,7 +57,7 @@ describe('Admin delivery-account management', () => {
       .get() as Record<string, unknown>;
     expect(stored.mobile).toBe('919000000021');
     expect(stored.password_hash).not.toBe(validPerson.password);
-    expect(String(stored.password_hash)).toMatch(/^pbkdf2_sha256\$/);
+    expect(String(stored.password_hash)).toMatch(/^scrypt\$/);
     expect(stored.active).toBe(1);
 
     const login = await deliveryLogin(

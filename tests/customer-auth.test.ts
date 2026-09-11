@@ -12,7 +12,7 @@ describe('customer authentication and UPI handoff', () => {
       await verifyCustomerPassword('a-secure-customer-password', stored),
     ).toBe(true);
     expect(await verifyCustomerPassword('wrong-password', stored)).toBe(false);
-    expect(Number(stored.split('$')[1])).toBe(210_000);
+    expect(stored).toMatch(/^scrypt\$32768\$8\$1\$/);
   });
   it('includes the exact order number and server total in the UPI WhatsApp message', () => {
     const decoded = decodeURIComponent(
