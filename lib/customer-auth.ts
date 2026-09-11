@@ -1,3 +1,5 @@
+import { pbkdf2 } from 'node:crypto';
+
 const encoder = new TextEncoder();
 const PASSWORD_ITERATIONS = 210_000;
 
@@ -21,21 +23,15 @@ async function derivePassword(
   salt: Uint8Array,
   iterations: number,
 ) {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits'],
-  );
-  const stableSalt = Uint8Array.from(salt);
-  return new Uint8Array(
-    await crypto.subtle.deriveBits(
-      { name: 'PBKDF2', hash: 'SHA-256', salt: stableSalt, iterations },
-      key,
-      256,
-    ),
-  );
+  // Workers Web Crypto rejects PBKDF2 above 100,000 iterations. The
+  // node:crypto compatibility implementation supports the existing stronger
+  // work factor, so production can create and verify the same hashes as local.
+  return new Promise<Uint8Array>((resolve, reject) => {
+    pbkdf2(password, salt, iterations, 32, 'sha256', (error, derivedKey) => {
+      if (error) reject(error);
+      else resolve(Uint8Array.from(derivedKey));
+    });
+  });
 }
 export async function hashCustomerPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
