@@ -3,9 +3,89 @@ import { z } from 'zod';
 import { verifyAdmin } from '@/lib/admin-auth';
 import { hashCustomerPassword } from '@/lib/customer-auth';
 import { normalizeIndianPhone } from '@/lib/services/phone';
-import { safeError, sameOrigin } from '@/lib/services/launch-rules';
+import {
+  CommerceError,
+  safeError,
+  sameOrigin,
+} from '@/lib/services/launch-rules';
 import { assignBatch, suggestRoute } from '@/lib/services/delivery-workflow';
 import { getCashSummary, recordCashSettlement } from '@/lib/services/cash-reconciliation';
+
+const deliveryPersonSchema = z.object({
+  action: z.literal('person'),
+  name: z.string().trim().min(2, 'Enter the delivery person’s name.').max(100),
+  phone: z.string().trim().min(1, 'Enter a mobile number.'),
+  password: z
+    .string()
+    .min(12, 'Password must be at least 12 characters.')
+    .max(128, 'Password must be 128 characters or fewer.'),
+});
+
+function deliveryPhone(value: string) {
+  try {
+    return normalizeIndianPhone(value);
+  } catch {
+    throw new CommerceError('Enter a valid 10-digit Indian mobile number.');
+  }
+}
+
+function isUniqueMobileError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /unique constraint failed:\s*delivery_people\.mobile/i.test(message);
+}
+
+async function createDeliveryPerson(
+  db: D1Database,
+  raw: unknown,
+) {
+  const data = deliveryPersonSchema.parse(raw);
+  const mobile = deliveryPhone(data.phone);
+  const existing = await db
+    .prepare('SELECT id FROM delivery_people WHERE mobile=?')
+    .bind(mobile)
+    .first<{ id: string }>();
+  if (existing)
+    throw new CommerceError(
+      'This mobile number already has a delivery account.',
+      409,
+    );
+
+  let passwordHash: string;
+  try {
+    passwordHash = await hashCustomerPassword(data.password);
+  } catch {
+    console.error('delivery_person_create_failed', {
+      reason: 'password_hash_failed',
+    });
+    throw new CommerceError(
+      'The password could not be secured. Please try again.',
+      500,
+    );
+  }
+
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  try {
+    await db
+      .prepare(
+        'INSERT INTO delivery_people (id,name,mobile,password_hash,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      )
+      .bind(id, data.name, mobile, passwordHash, now, now)
+      .run();
+  } catch (error) {
+    if (isUniqueMobileError(error))
+      throw new CommerceError(
+        'This mobile number already has a delivery account.',
+        409,
+      );
+    console.error('delivery_person_create_failed', { reason: 'database_write' });
+    throw new CommerceError(
+      'The delivery login could not be saved. Please try again.',
+      500,
+    );
+  }
+  return { id };
+}
 export async function GET(request: Request) {
   if (!(await verifyAdmin(request)))
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -52,30 +132,8 @@ export async function POST(request: Request) {
     const raw = (await request.json()) as { action: string };
     if (raw.action === 'assign')
       return Response.json(await assignBatch(env.DB, raw));
-    if (raw.action === 'person') {
-      const data = z
-          .object({
-            name: z.string().trim().min(2).max(100),
-            phone: z.string(),
-            password: z.string().min(12).max(128),
-          })
-          .parse(raw),
-        now = new Date().toISOString();
-      const id = crypto.randomUUID();
-      await env.DB.prepare(
-        'INSERT INTO delivery_people (id,name,mobile,password_hash,created_at,updated_at) VALUES (?,?,?,?,?,?)',
-      )
-        .bind(
-          id,
-          data.name,
-          normalizeIndianPhone(data.phone),
-          await hashCustomerPassword(data.password),
-          now,
-          now,
-        )
-        .run();
-      return Response.json({ id });
-    }
+    if (raw.action === 'person')
+      return Response.json(await createDeliveryPerson(env.DB, raw));
     if (raw.action === 'disable') {
       const data = z.object({ personId: z.string() }).parse(raw);
       await env.DB.batch([

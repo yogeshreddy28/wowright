@@ -578,7 +578,12 @@ export function DeliveryAdmin({
           body: JSON.stringify(body),
         }),
         result = (await r.json()) as Row;
-      if (!r.ok) throw Error(result.error || 'Update failed');
+      if (!r.ok)
+        throw Error(
+          r.status === 401
+            ? 'Your Admin session expired — sign in again.'
+            : result.error || 'The request could not be completed.',
+        );
       if (body.action === 'assign') {
         setSelected([]);
         setView('today');
@@ -1153,7 +1158,11 @@ export function DeliveryAdmin({
               minLength={12}
               required
               autoComplete="new-password"
+              aria-describedby="delivery-password-help"
             />
+            <small id="delivery-password-help">
+              Use at least 12 characters.
+            </small>
           </label>
           <button className="button secondary" disabled={busy}>
             Create delivery login
