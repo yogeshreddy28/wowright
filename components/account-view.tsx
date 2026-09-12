@@ -24,6 +24,7 @@ type Address = {
   landmark?: string;
   latitude?: number;
   longitude?: number;
+  location_accuracy?: number;
 };
 type Order = {
   order_number: string;
@@ -391,7 +392,7 @@ export function AccountView() {
                   onChange={setAddressLabelType}
                   customDefaultValue={editingAddress && !['Home','Work','Friend / Family'].includes(editingAddress.label || '') ? editingAddress.label : ''}
                 />
-                <AddressLocationPicker initialLatitude={editingAddress?.latitude} initialLongitude={editingAddress?.longitude} />
+                <AddressLocationPicker initialLatitude={editingAddress?.latitude} initialLongitude={editingAddress?.longitude} initialAccuracy={editingAddress?.location_accuracy} />
                 <label>
                   Address
                   <input name="line1" required defaultValue={editingAddress?.line1} />

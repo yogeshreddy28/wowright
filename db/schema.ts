@@ -181,6 +181,7 @@ export const customerAddresses = sqliteTable(
     label: text('label'),
     latitude: real('latitude'),
     longitude: real('longitude'),
+    locationAccuracy: real('location_accuracy'),
     isDefault: integer('is_default', { mode: 'boolean' })
       .notNull()
       .default(false),
@@ -294,6 +295,7 @@ export const orders = sqliteTable(
     orderType: text('order_type').notNull().default('normal'),
     latitude: real('latitude'),
     longitude: real('longitude'),
+    locationAccuracy: real('location_accuracy'),
     estimatedDeliveryDate: text('estimated_delivery_date'),
     promisedDeliveryDate: text('promised_delivery_date'),
     deliveryWindow: text('delivery_window'),

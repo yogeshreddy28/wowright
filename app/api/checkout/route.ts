@@ -35,6 +35,7 @@ export const checkoutAddress = z.object({
   notes: z.string().max(500).optional(),
   latitude: z.coerce.number().finite(),
   longitude: z.coerce.number().finite(),
+  locationAccuracy: z.coerce.number().finite().min(0).max(100000).optional(),
   labelType: z.enum(['Home', 'Work', 'Friend / Family', 'Custom']).optional(),
   customLabel: z.string().trim().max(40).optional(),
 }).superRefine((value, context) => {
@@ -107,7 +108,7 @@ export async function POST(request: Request) {
       throw new CommerceError('Use the verified email linked to your account.');
     let selectedAddress: Record<string, unknown> | null = null;
     if (data.customer.addressId) {
-      selectedAddress = await db.prepare('SELECT id,line1,line2,locality,city,state,pin_code,landmark,latitude,longitude FROM customer_addresses WHERE id=? AND customer_id=?').bind(data.customer.addressId, account.id).first<Record<string, unknown>>();
+      selectedAddress = await db.prepare('SELECT id,line1,line2,locality,city,state,pin_code,landmark,latitude,longitude,location_accuracy FROM customer_addresses WHERE id=? AND customer_id=?').bind(data.customer.addressId, account.id).first<Record<string, unknown>>();
       if (!selectedAddress) throw new CommerceError('That saved address is no longer available.', 404);
       if (selectedAddress.latitude == null || selectedAddress.longitude == null)
         throw new CommerceError('Add a map pin to this saved address before using it for delivery.');
@@ -121,6 +122,7 @@ export async function POST(request: Request) {
         landmark: selectedAddress.landmark || '',
         latitude: selectedAddress.latitude,
         longitude: selectedAddress.longitude,
+        locationAccuracy: selectedAddress.location_accuracy,
       });
     }
     assertBengaluru(data.customer);
@@ -205,7 +207,7 @@ export async function POST(request: Request) {
     } else statements.push(
       db
         .prepare(
-          'INSERT INTO customer_addresses (id,customer_id,label,line1,line2,locality,city,state,pin_code,landmark,notes,latitude,longitude,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO customer_addresses (id,customer_id,label,line1,line2,locality,city,state,pin_code,landmark,notes,latitude,longitude,location_accuracy,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         )
         .bind(
           addressId,
@@ -221,6 +223,7 @@ export async function POST(request: Request) {
           data.customer.notes || null,
           data.customer.latitude,
           data.customer.longitude,
+          data.customer.locationAccuracy ?? null,
           now,
           now,
         ),
@@ -228,7 +231,7 @@ export async function POST(request: Request) {
     statements.push(
       db
         .prepare(
-          'INSERT INTO orders (id,order_number,idempotency_key,checkout_fingerprint,session_id,customer_id,address_id,status,payment_status,payment_method,customer_email,subtotal,delivery_amount,total,customer_notes,latitude,longitude,estimated_delivery_date,campaign_attribution,companion_engaged,companion_assisted_cart,companion_assisted_checkout,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO orders (id,order_number,idempotency_key,checkout_fingerprint,session_id,customer_id,address_id,status,payment_status,payment_method,customer_email,subtotal,delivery_amount,total,customer_notes,latitude,longitude,location_accuracy,estimated_delivery_date,campaign_attribution,companion_engaged,companion_assisted_cart,companion_assisted_checkout,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         )
         .bind(
           id,
@@ -248,6 +251,7 @@ export async function POST(request: Request) {
           data.customer.notes || null,
           data.customer.latitude,
           data.customer.longitude,
+          data.customer.locationAccuracy ?? null,
           plan?.estimatedDeliveryDate || null,
           JSON.stringify({
             ...campaign,

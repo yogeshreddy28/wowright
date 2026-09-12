@@ -127,6 +127,13 @@
       "when": 1789059600000,
       "tag": "0017_normalize_catalog_finishes",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1789132033827,
+      "tag": "0018_location_accuracy",
+      "breakpoints": true
     }
   ]
 }

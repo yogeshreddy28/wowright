@@ -4,7 +4,7 @@ import { calculateCashHeld, getCashSummary, recordCashSettlement } from '@/lib/s
 import { assertEditableProductJson } from '@/lib/services/product-admin';
 import { shouldNotifyNewOrders, shouldRingOrderAlarm } from '@/components/admin-order-notifier';
 import { createCustomerSession } from '@/lib/customer-auth';
-import { mapViewport } from '@/components/address-location-picker';
+import { centerAfterMapDrag, clampDeliveryPoint, mapViewport, preciseGeolocationOptions } from '@/components/address-location-picker';
 import { deliveredOrderReviewPrompt, nextReviewPrompt } from '@/lib/services/review-eligibility';
 
 const bindings = vi.hoisted(() => ({ DB: {} as D1Database }));
@@ -54,6 +54,16 @@ describe('launch UX security and accounting rules', () => {
     expect(deliveredOrderReviewPrompt({ status: 'delivered', previousStatus: 'delivered', items: [], dismissedAt: () => 0 })).toBeNull();
   });
 
+  it('keeps the fixed center pin authoritative and requests fresh high-accuracy location', () => {
+    const start = { latitude: 12.9716, longitude: 77.5946 };
+    const viewport = mapViewport(start, 18);
+    const moved = centerAfterMapDrag(start, viewport, 50, -30, 300, 320);
+    expect(moved.latitude).toBeLessThan(start.latitude);
+    expect(moved.longitude).toBeLessThan(start.longitude);
+    expect(clampDeliveryPoint({ latitude: 90, longitude: 10 })).toEqual({ latitude: 13.15, longitude: 77.4 });
+    expect(preciseGeolocationOptions).toEqual({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+
   it('blocks JSON-only fields and preserves publish validation', () => {
     expect(() => assertEditableProductJson({ id: 'overwrite' })).toThrow('read-only');
     expect(() => assertEditableProductJson({ name: 'Unsafe', categoryId: 'cat', basePrice: -1 })).toThrow();
@@ -65,11 +75,11 @@ describe('launch UX security and accounting rules', () => {
     database.sqlite.exec("INSERT INTO customers(id,name,mobile) VALUES('a','A','919000000011'),('b','B','919000000012')");
     const cookieA = (await createCustomerSession(database.db, 'a')).split(';')[0];
     const cookieB = (await createCustomerSession(database.db, 'b')).split(';')[0];
-    const body = { labelType: 'Custom', customLabel: 'Parents', line1: 'One Road', locality: 'Jayanagar', city: 'Bengaluru', state: 'Karnataka', pinCode: '560041', latitude: 12.93, longitude: 77.58, isDefault: true };
+    const body = { labelType: 'Custom', customLabel: 'Parents', line1: 'One Road', locality: 'Jayanagar', city: 'Bengaluru', state: 'Karnataka', pinCode: '560041', latitude: 12.93, longitude: 77.58, locationAccuracy: 14.5, isDefault: true };
     const saved = await saveAddress(new Request('http://local/api/account/addresses', { method: 'POST', headers: { origin: 'http://local', cookie: cookieA, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
     expect(saved.status).toBe(200);
     const list = await (await readAddresses(new Request('http://local/api/account/addresses', { headers: { cookie: cookieA } }))).json() as any;
-    expect(list.addresses[0]).toMatchObject({ label: 'Parents', latitude: 12.93, longitude: 77.58 });
+    expect(list.addresses[0]).toMatchObject({ label: 'Parents', latitude: 12.93, longitude: 77.58, location_accuracy: 14.5 });
     const denied = await updateAddress(new Request('http://local/api/account/addresses', { method: 'PATCH', headers: { origin: 'http://local', cookie: cookieB, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, id: list.addresses[0].id }) }));
     expect(denied.status).toBe(404);
   });

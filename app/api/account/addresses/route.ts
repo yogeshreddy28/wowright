@@ -16,6 +16,7 @@ const schema = z.object({
   isDefault: z.boolean().optional(),
   latitude: z.coerce.number().finite().min(12.8).max(13.15).optional(),
   longitude: z.coerce.number().finite().min(77.4).max(77.8).optional(),
+  locationAccuracy: z.coerce.number().finite().min(0).max(100000).optional(),
 }).superRefine((value, context) => {
   if ((value.latitude == null) !== (value.longitude == null))
     context.addIssue({ code: 'custom', message: 'Choose a complete map location.' });
@@ -32,7 +33,7 @@ export async function GET(r: Request) {
   const c = await getCustomerFromRequest(r, env.DB);
   if (!c) return Response.json({ error: 'Unauthorized' }, { status: 401 });
   const rows = await env.DB.prepare(
-    'SELECT id,label,line1,line2,locality,city,state,pin_code,landmark,latitude,longitude,is_default FROM customer_addresses WHERE customer_id=? ORDER BY is_default DESC,created_at DESC',
+    'SELECT id,label,line1,line2,locality,city,state,pin_code,landmark,latitude,longitude,location_accuracy,is_default FROM customer_addresses WHERE customer_id=? ORDER BY is_default DESC,created_at DESC',
   )
     .bind(c.id)
     .all();
@@ -61,7 +62,7 @@ export async function POST(r: Request) {
       );
     statements.push(
       env.DB.prepare(
-        'INSERT INTO customer_addresses (id,customer_id,label,line1,line2,locality,city,state,pin_code,landmark,latitude,longitude,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO customer_addresses (id,customer_id,label,line1,line2,locality,city,state,pin_code,landmark,latitude,longitude,location_accuracy,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       ).bind(
         id,
         c.id,
@@ -75,6 +76,7 @@ export async function POST(r: Request) {
         d.landmark || null,
         d.latitude ?? null,
         d.longitude ?? null,
+        d.locationAccuracy ?? null,
         Number(d.isDefault || false),
         now,
         now,
@@ -102,7 +104,7 @@ export async function PATCH(r: Request) {
       return Response.json({ error: 'This address is part of an existing order. Add a new address so the old delivery record stays unchanged.' }, { status: 409 });
     const statements: D1PreparedStatement[] = [];
     if (d.isDefault) statements.push(env.DB.prepare('UPDATE customer_addresses SET is_default=0 WHERE customer_id=?').bind(c.id));
-    statements.push(env.DB.prepare('UPDATE customer_addresses SET label=?,line1=?,line2=?,locality=?,city=?,state=?,pin_code=?,landmark=?,latitude=?,longitude=?,is_default=?,updated_at=? WHERE id=? AND customer_id=?').bind(addressLabel(d), d.line1, d.line2 || null, d.locality, d.city, d.state, d.pinCode, d.landmark || null, d.latitude ?? null, d.longitude ?? null, Number(d.isDefault || false), new Date().toISOString(), id, c.id));
+    statements.push(env.DB.prepare('UPDATE customer_addresses SET label=?,line1=?,line2=?,locality=?,city=?,state=?,pin_code=?,landmark=?,latitude=?,longitude=?,location_accuracy=?,is_default=?,updated_at=? WHERE id=? AND customer_id=?').bind(addressLabel(d), d.line1, d.line2 || null, d.locality, d.city, d.state, d.pinCode, d.landmark || null, d.latitude ?? null, d.longitude ?? null, d.locationAccuracy ?? null, Number(d.isDefault || false), new Date().toISOString(), id, c.id));
     await env.DB.batch(statements);
     return Response.json({ ok: true });
   } catch (error) { return safeError(error, 'Check the address.'); }

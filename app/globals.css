@@ -5180,16 +5180,38 @@ body {
 .location-button {
   justify-self: start;
 }
+.location-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.address-map-shell {
+  border-radius: 15px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  background: #fff;
+}
+.address-map-shell.is-editing {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px var(--orange-pale);
+}
 .address-map {
   position: relative;
   width: 100%;
   height: 260px;
   overflow: hidden;
-  border-radius: 15px;
-  border: 1px solid var(--line);
+  border-radius: 0;
+  border: 0;
   background: #eee4d7;
-  cursor: crosshair;
+  cursor: default;
+  touch-action: pan-y;
+}
+.is-editing .address-map {
+  cursor: grab;
   touch-action: none;
+}
+.is-editing .address-map:active {
+  cursor: grabbing;
 }
 .address-map iframe {
   width: 100%;
@@ -5204,6 +5226,41 @@ body {
   filter: drop-shadow(0 2px 2px white);
   pointer-events: none;
 }
+.address-map-pin-center {
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+}
+.address-map-lock {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 3px;
+  touch-action: pan-y;
+}
+.address-map-lock > svg {
+  width: 18px;
+  padding: 7px;
+  box-sizing: content-box;
+  border-radius: 999px;
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+}
+.address-map-lock > span,
+.address-map-lock > small {
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+  font-size: 12px;
+}
+.address-map-lock > small { opacity: .9; }
 .address-map-pin svg {
   width: 32px;
   height: 32px;
@@ -5214,9 +5271,9 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 0;
   padding: 8px;
-  border: 1px solid var(--line);
+  border: 0;
   border-bottom: 0;
   border-radius: 14px 14px 0 0;
   background: #fff;
@@ -5232,6 +5289,20 @@ body {
   gap: 6px;
   padding: 8px 10px;
 }
+.address-map-toolbar > span,
+.address-map-toolbar > span > svg {
+  display: inline-flex;
+  align-items: center;
+}
+.address-map-toolbar > span {
+  gap: 6px;
+  font-weight: 750;
+  font-size: 13px;
+}
+.address-map-toolbar button:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
 .address-map-toolbar div {
   display: flex;
   gap: 5px;
@@ -5240,8 +5311,37 @@ body {
   width: 17px;
   height: 17px;
 }
-.address-map-toolbar + .address-map {
-  border-radius: 0 0 15px 15px;
+.map-edit-banner {
+  padding: 8px 12px;
+  color: var(--orange-deep);
+  background: var(--orange-pale);
+  border-top: 1px solid color-mix(in srgb, var(--orange) 35%, transparent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.map-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+}
+.map-edit-actions .button { min-height: 42px; }
+.location-accuracy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #166534 !important;
+  background: #f0fdf4;
+  font-size: 12px !important;
+  font-weight: 700;
+}
+.location-accuracy svg {
+  width: 14px;
+  height: 14px;
 }
 .json-utility-actions {
   display: flex;

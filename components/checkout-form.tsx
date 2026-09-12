@@ -206,6 +206,7 @@ export function CheckoutForm() {
       landmark: 'landmark',
       latitude: 'latitude',
       longitude: 'longitude',
+      location_accuracy: 'locationAccuracy',
     };
     for (const [source, target] of Object.entries(mapping)) {
       const field = formRef.current.elements.namedItem(target);
@@ -439,7 +440,7 @@ export function CheckoutForm() {
               </div>
             </div>
             <div className="field-grid">
-              <AddressLocationPicker key={selectedAddressId || 'new'} initialLatitude={Number(addresses.find((a) => String(a.id) === selectedAddressId)?.latitude) || null} initialLongitude={Number(addresses.find((a) => String(a.id) === selectedAddressId)?.longitude) || null} />
+              <AddressLocationPicker key={selectedAddressId || 'new'} initialLatitude={Number(addresses.find((a) => String(a.id) === selectedAddressId)?.latitude) || null} initialLongitude={Number(addresses.find((a) => String(a.id) === selectedAddressId)?.longitude) || null} initialAccuracy={Number(addresses.find((a) => String(a.id) === selectedAddressId)?.location_accuracy) || null} />
               {!selectedAddressId && (
                 <div className="save-address-prompt wide">
                   <AddressLabelSelector value={addressLabelType} onChange={setAddressLabelType} />
