@@ -15,6 +15,7 @@ export const metadata: Metadata = {
   },
   description:
     'Personalized 3D printed products made to turn your ideas, memories and imagination into something you can hold.',
+  icons: { icon: '/favicon.svg' },
   alternates: { canonical: '/' },
   openGraph: {
     type: 'website',
