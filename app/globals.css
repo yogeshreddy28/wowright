@@ -4857,6 +4857,17 @@ body {
   }
 }
 
+/* Keep the product decision area within reach on short mobile viewports. */
+@media (max-width: 760px) {
+  .gallery > .product-image {
+    width: 100%;
+    height: clamp(270px, 45dvh, 380px);
+    max-height: none;
+    aspect-ratio: auto;
+    object-fit: contain;
+  }
+}
+
 /* WhatsApp-first storefront assistance */
 .whatsapp-help {
   display: inline-flex;
