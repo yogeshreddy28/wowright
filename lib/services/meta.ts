@@ -27,10 +27,26 @@ export async function flushMetaOutbox(
     .all<{ id: string; payload: string; event_name: string }>();
   let sent = 0;
   for (const row of rows.results) {
+    // Several storefront requests may flush concurrently. Claim each row with
+    // a conditional update before contacting Meta so only one worker can send
+    // a given event_id.
+    const claim = await db
+      .prepare(
+        "UPDATE commerce_outbox SET status='processing' WHERE id=? AND status='pending'",
+      )
+      .bind(row.id)
+      .run();
+    if ((claim.meta?.changes || 0) !== 1) continue;
     let payload: Record<string, unknown>;
     try {
       payload = JSON.parse(row.payload);
     } catch {
+      await db
+        .prepare(
+          "UPDATE commerce_outbox SET status='failed',attempts=attempts+1,last_error='invalid_payload' WHERE id=?",
+        )
+        .bind(row.id)
+        .run();
       continue;
     }
     if (payload.consent !== true) {
@@ -83,7 +99,7 @@ export async function flushMetaOutbox(
           : 'network_error';
       await db
         .prepare(
-          'UPDATE commerce_outbox SET attempts=attempts+1,last_error=? WHERE id=?',
+          "UPDATE commerce_outbox SET status='pending',attempts=attempts+1,last_error=? WHERE id=?",
         )
         .bind(reason, row.id)
         .run();

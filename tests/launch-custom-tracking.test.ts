@@ -188,6 +188,30 @@ it('Purchase is saved atomically and deduplicated, and respects Meta consent', a
       .get()?.n,
   ).toBe(1);
 });
+it('claims a Meta outbox event once across concurrent flushes', async () => {
+  const order = await approvedOrder();
+  database.sqlite.exec(
+    'UPDATE orders SET campaign_attribution=\'{"analyticsConsent":true}\'',
+  );
+  await confirmUPI(bindings.DB, order.id);
+  vi.stubEnv('META_PIXEL_ID', '123456789');
+  vi.stubEnv('META_CAPI_ACCESS_TOKEN', 'isolated-test-token');
+  vi.stubEnv('META_API_VERSION', 'v25.0');
+  const transport = vi.fn(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return Response.json({ events_received: 1 });
+  });
+  const results = await Promise.all([
+    flushMetaOutbox(bindings.DB, transport),
+    flushMetaOutbox(bindings.DB, transport),
+    flushMetaOutbox(bindings.DB, transport),
+  ]);
+  expect(results.reduce((total, result) => total + result.sent, 0)).toBe(1);
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(
+    database.sqlite.prepare('SELECT status FROM commerce_outbox').get()?.status,
+  ).toBe('sent');
+});
 it('provider failures never leak token/error bodies into the outbox', async () => {
   const order = await approvedOrder();
   database.sqlite.exec(
