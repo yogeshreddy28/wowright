@@ -19,9 +19,10 @@ import {
   getCatalogCategories,
   getCatalogProducts,
 } from '@/lib/catalog-repository';
+import { toProductCardData } from '@/lib/product-card-data';
 export default async function Home() {
   const [products, categories, bestSellers] = await Promise.all([
-    getCatalogProducts(),
+    getCatalogProducts(8),
     getCatalogCategories(),
     getBestSellingProducts(),
   ]);
@@ -81,7 +82,7 @@ export default async function Home() {
         >
           {featuredProducts.map((product) => (
             <ProductCard
-              product={product}
+              product={toProductCardData(product)}
               density="featured"
               placement="homepage_featured"
               key={product.id}
@@ -209,7 +210,11 @@ export default async function Home() {
         </div>
         <div className="product-grid">
           {products.slice(0, 4).map((product) => (
-            <ProductCard product={product} key={product.id} density="shop" />
+            <ProductCard
+              product={toProductCardData(product)}
+              key={product.id}
+              density="shop"
+            />
           ))}
         </div>
       </section>
@@ -223,7 +228,11 @@ export default async function Home() {
         {bestSellers.length ? (
           <div className="product-grid">
             {bestSellers.map((product) => (
-              <ProductCard product={product} key={product.id} density="shop" />
+              <ProductCard
+                product={toProductCardData(product)}
+                key={product.id}
+                density="shop"
+              />
             ))}
           </div>
         ) : (
@@ -243,7 +252,7 @@ export default async function Home() {
             <br />
             answered clearly.
           </h2>
-          <p>The WOW Assistant can help with products and checkout.</p>
+          <p>Need personal help? Talk to WOW RIGHT directly on WhatsApp.</p>
         </div>
         <div>
           {faqs.map((faq, index) => (

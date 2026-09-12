@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { DM_Sans, Lora } from 'next/font/google';
 import './globals.css';
 import { StoreProvider } from '@/components/store-provider';
-import { CompanionProvider } from '@/components/wow-companion/companion-context';
 import { AnalyticsProvider } from '@/components/analytics-provider';
 
 const sans = DM_Sans({ variable: '--font-sans', subsets: ['latin'] });
@@ -61,7 +60,8 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organization) }}
         />
         <StoreProvider>
-          <CompanionProvider>{children}<AnalyticsProvider/></CompanionProvider>
+          {children}
+          <AnalyticsProvider />
         </StoreProvider>
       </body>
     </html>

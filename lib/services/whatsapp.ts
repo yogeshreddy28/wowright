@@ -46,6 +46,19 @@ export function createUPIPaymentURL(
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
+export function createWhatsAppInterestURL(
+  context: { productName?: string; productURL?: string } = {},
+  number = process.env.WHATSAPP_BUSINESS_NUMBER || '919353193080',
+) {
+  const normalized = number.replace(/\D/g, '');
+  if (!/^\d{10,15}$/.test(normalized))
+    throw new Error('WhatsApp number is not configured');
+  const message = context.productName
+    ? `Hi WOW RIGHT, I'm interested in ${context.productName}.${context.productURL ? ` ${context.productURL}` : ''}`
+    : 'Hi WOW RIGHT, I visited your website and would like some help.';
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
+}
+
 export function createOrderUpdateURL(
   order: {
     orderNumber: string;

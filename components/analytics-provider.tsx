@@ -43,7 +43,7 @@ export function AnalyticsProvider() {
   useEffect(() => {
     if (!path || path.startsWith('/admin') || path.startsWith('/delivery'))
       return;
-    trackCommerce('page_view', {
+    trackCommerce('PageView', {
       device: innerWidth < 768 ? 'mobile' : 'desktop',
       returning: Boolean(localStorage.getItem('wow_visited')),
     });
@@ -92,6 +92,7 @@ export function AnalyticsProvider() {
     const listener = (event: Event) => {
       const d = (event as CustomEvent).detail;
       const standard = [
+        'PageView',
         'ViewContent',
         'Search',
         'AddToCart',
@@ -99,18 +100,29 @@ export function AnalyticsProvider() {
         'AddPaymentInfo',
         'Lead',
       ];
-      if (standard.includes(d.name))
+      if (standard.includes(d.name)) {
+        const value = Number(
+          d.metadata?.value ?? d.metadata?.total ?? d.metadata?.price,
+        );
         window.fbq?.(
           'track',
           d.name,
           {
             content_ids: d.productId ? [d.productId] : undefined,
+            content_type: d.productId ? 'product' : undefined,
             currency: 'INR',
+            value: Number.isFinite(value) ? value : undefined,
           },
           { eventID: d.eventId },
         );
+        window.__wowAnalyticsQueue = (window.__wowAnalyticsQueue || []).filter(
+          (item) => item.eventId !== d.eventId,
+        );
+      }
     };
     window.addEventListener('wow:analytics', listener);
+    for (const detail of window.__wowAnalyticsQueue || [])
+      listener(new CustomEvent('wow:analytics', { detail }));
     return () => window.removeEventListener('wow:analytics', listener);
   }, [consent, pixel, path]);
   if (
@@ -123,6 +135,7 @@ export function AnalyticsProvider() {
     localStorage.setItem('wow_analytics_consent', value);
     setConsent(value);
     if (value !== 'granted') window.fbq?.('consent', 'revoke');
+    if (value !== 'granted') window.__wowAnalyticsQueue = [];
   }
   return (
     <aside className="consent-banner" aria-label="Privacy choices">

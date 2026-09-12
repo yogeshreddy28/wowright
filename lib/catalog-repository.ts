@@ -229,11 +229,15 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
     };
   });
 }
-export async function getCatalogProducts() {
+const visibleProductWhere =
+  "active=1 AND COALESCE(publishing_status,CASE WHEN status='draft' THEN 'draft' ELSE 'published' END)='published' AND COALESCE(availability,CASE WHEN status='unavailable' THEN 'temporarily_unavailable' ELSE 'available' END)<>'discontinued'";
+
+export async function getCatalogProducts(limit?: number) {
   try {
-    const result = await env.DB.prepare(
-      "SELECT * FROM products WHERE active=1 AND COALESCE(publishing_status,CASE WHEN status='draft' THEN 'draft' ELSE 'published' END)='published' AND COALESCE(availability,CASE WHEN status='unavailable' THEN 'temporarily_unavailable' ELSE 'available' END)<>'discontinued' ORDER BY featured DESC, created_at DESC",
-    ).all();
+    const statement = env.DB.prepare(
+      `SELECT * FROM products WHERE ${visibleProductWhere} ORDER BY featured DESC, created_at DESC${limit ? ' LIMIT ?' : ''}`,
+    );
+    const result = await (limit ? statement.bind(limit) : statement).all();
     const items = await hydrate(result.results as Row[]);
     return items;
   } catch {
@@ -242,16 +246,36 @@ export async function getCatalogProducts() {
   }
 }
 export async function getCatalogProductBySlug(slug: string) {
-  return (await getCatalogProducts()).find((product) => product.slug === slug);
+  try {
+    const row = await env.DB.prepare(
+      `SELECT * FROM products WHERE ${visibleProductWhere} AND slug=? LIMIT 1`,
+    )
+      .bind(slug)
+      .first<Row>();
+    return row ? (await hydrate([row]))[0] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 export async function getCatalogProductById(id: string) {
-  return (await getCatalogProducts()).find((product) => product.id === id);
+  try {
+    const row = await env.DB.prepare(
+      `SELECT * FROM products WHERE ${visibleProductWhere} AND id=? LIMIT 1`,
+    )
+      .bind(id)
+      .first<Row>();
+    return row ? (await hydrate([row]))[0] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 export async function getCatalogCategories(): Promise<CatalogCategory[]> {
-  const products = await getCatalogProducts();
   try {
     const result = await env.DB.prepare(
-      'SELECT id,slug,name,description,image FROM categories WHERE active=1 ORDER BY sort_order,name',
+      `SELECT c.id,c.slug,c.name,c.description,c.image,COUNT(p.id) product_count
+       FROM categories c LEFT JOIN products p ON p.category=c.name AND p.${visibleProductWhere}
+       WHERE c.active=1 GROUP BY c.id,c.slug,c.name,c.description,c.image,c.sort_order
+       HAVING COUNT(p.id)>0 ORDER BY c.sort_order,c.name`,
     ).all<Row>();
     const configured = result.results
       .map((row) => ({
@@ -260,13 +284,12 @@ export async function getCatalogCategories(): Promise<CatalogCategory[]> {
         name: String(row.name),
         description: row.description ? String(row.description) : undefined,
         image: row.image ? String(row.image) : undefined,
-        productCount: products.filter(
-          (product) => product.category === row.name,
-        ).length,
+        productCount: Number(row.product_count || 0),
       }))
       .filter((category) => category.productCount > 0);
     if (configured.length) return configured;
   } catch {}
+  const products = await getCatalogProducts();
   return [...new Set(products.map((product) => product.category))].map(
     (name) => ({
       id: categorySlug(name),
@@ -278,19 +301,29 @@ export async function getCatalogCategories(): Promise<CatalogCategory[]> {
   );
 }
 export async function getRelatedProducts(product: Product) {
-  const all = await getCatalogProducts();
-  return (
-    product.relatedProductIds?.length
-      ? product.relatedProductIds
-          .map((id) => all.find((item) => item.id === id))
-          .filter(Boolean)
-      : all
-          .filter(
-            (item) =>
-              item.id !== product.id && item.category === product.category,
-          )
-          .slice(0, 4)
-  ) as Product[];
+  try {
+    if (product.relatedProductIds?.length) {
+      const ids = product.relatedProductIds.slice(0, 4);
+      const marks = ids.map(() => '?').join(',');
+      const rows = await env.DB.prepare(
+        `SELECT * FROM products WHERE ${visibleProductWhere} AND id IN (${marks}) LIMIT 4`,
+      )
+        .bind(...ids)
+        .all<Row>();
+      const hydrated = await hydrate(rows.results);
+      return ids
+        .map((id) => hydrated.find((item) => item.id === id))
+        .filter(Boolean) as Product[];
+    }
+    const rows = await env.DB.prepare(
+      `SELECT * FROM products WHERE ${visibleProductWhere} AND id<>? AND category=? ORDER BY featured DESC,created_at DESC LIMIT 4`,
+    )
+      .bind(product.id, product.category)
+      .all<Row>();
+    return hydrate(rows.results);
+  } catch {
+    return [];
+  }
 }
 export async function getBestSellingProducts() {
   try {

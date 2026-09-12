@@ -1,5 +1,5 @@
 'use client';
-import { Minus, Plus, ShoppingBag } from 'lucide-react';
+import { MessageCircle, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Product, Selection } from '@/lib/domain';
@@ -12,7 +12,13 @@ import { emitCompanionEvent } from '@/lib/companion/events';
 import { isFinishReferenceOnly } from '@/lib/product-gallery';
 import { trackCommerce } from '@/lib/analytics-client';
 import { useStore } from './store-provider';
-export function ProductConfigurator({ product }: { product: Product }) {
+export function ProductConfigurator({
+  product,
+  whatsappURL,
+}: {
+  product: Product;
+  whatsappURL: string;
+}) {
   const initialSelections = useRef<Selection>(
     Object.fromEntries(
       product.options
@@ -351,6 +357,21 @@ export function ProductConfigurator({ product }: { product: Product }) {
         >
           <ShoppingBag /> Add to cart
         </button>
+        <a
+          className="button whatsapp product-whatsapp"
+          href={whatsappURL}
+          target="_blank"
+          rel="noreferrer"
+          onClick={() =>
+            trackCommerce(
+              'whatsapp_clicked',
+              { placement: 'product' },
+              product.id,
+            )
+          }
+        >
+          <MessageCircle /> WhatsApp
+        </a>
       </div>
       <button
         className="button secondary full"

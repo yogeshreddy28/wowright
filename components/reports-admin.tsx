@@ -19,7 +19,11 @@ export function ReportsAdmin({
   const count = (name: string, field = 'events') =>
     Number(d.funnel?.find((f: Row) => f.name === name)?.[field] || 0);
   const stages = [
-    ['Visitors', count('page_view', 'sessions'), 'browser sessions'],
+    [
+      'Visitors',
+      count('PageView', 'sessions') || count('page_view', 'sessions'),
+      'browser sessions',
+    ],
     ['Product views', count('ViewContent') || count('product_view'), 'views'],
     ['Added to cart', count('AddToCart') || count('add_to_cart'), 'events'],
     [

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { applySecurityHeaders } from '@/lib/security-headers';
 
 const canonicalHost = 'wowright.in';
 
@@ -10,13 +11,27 @@ export function middleware(request: NextRequest) {
     .split(':')[0]
     .toLowerCase();
 
-  if (host !== `www.${canonicalHost}`) return NextResponse.next();
+  const forwardedProtocol = request.headers
+    .get('x-forwarded-proto')
+    ?.split(',')[0]
+    .trim()
+    .toLowerCase();
 
   const destination = request.nextUrl.clone();
-  destination.protocol = 'https:';
-  destination.hostname = canonicalHost;
-  destination.port = '';
-  return NextResponse.redirect(destination, 308);
+  if (host === `www.${canonicalHost}` || forwardedProtocol === 'http') {
+    destination.protocol = 'https:';
+    if (host === `www.${canonicalHost}`) destination.hostname = canonicalHost;
+    destination.port = '';
+    return NextResponse.redirect(destination, 308);
+  }
+
+  const response = NextResponse.next();
+  applySecurityHeaders(
+    response.headers,
+    request.nextUrl.pathname,
+    request.method,
+  );
+  return response;
 }
 
 export const config = {

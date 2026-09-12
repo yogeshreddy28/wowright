@@ -7,6 +7,7 @@ import { createHashToken } from '@/lib/session-tokens';
 const schema = z.object({
   name: z.enum([
     'page_view',
+    'PageView',
     'product_view',
     'ai_opened',
     'ai_message',
@@ -148,6 +149,7 @@ export async function POST(r: Request) {
       d.consent &&
       d.sessionId &&
       [
+        'PageView',
         'ViewContent',
         'Search',
         'AddToCart',
@@ -167,6 +169,12 @@ export async function POST(r: Request) {
         custom_data: {
           currency: 'INR',
           content_ids: d.productId ? [d.productId] : undefined,
+          content_type: d.productId ? 'product' : undefined,
+          value:
+            typeof (metadata.value ?? metadata.total ?? metadata.price) ===
+            'number'
+              ? (metadata.value ?? metadata.total ?? metadata.price)
+              : undefined,
         },
         consent: true,
       });

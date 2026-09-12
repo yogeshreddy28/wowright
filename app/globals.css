@@ -4857,6 +4857,86 @@ body {
   }
 }
 
+/* WhatsApp-first storefront assistance */
+.whatsapp-help {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: #187a45;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(24, 122, 69, 0.22);
+}
+.whatsapp-help svg,
+.product-whatsapp svg {
+  width: 18px;
+  height: 18px;
+}
+.whatsapp-floating {
+  position: fixed;
+  right: 20px;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 48;
+  padding: 0 17px;
+}
+.checkout-whatsapp-help {
+  width: 100%;
+  margin: 10px 0 2px;
+  border-radius: 11px;
+  box-shadow: none;
+}
+.purchase-row {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) minmax(142px, 1fr) auto;
+  gap: 9px;
+}
+.purchase-row .product-whatsapp {
+  min-width: 0;
+  padding-inline: 14px;
+  white-space: nowrap;
+}
+.assistant-inline {
+  text-decoration: none;
+}
+
+@media (max-width: 680px) {
+  .whatsapp-floating {
+    right: 12px;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    min-width: 48px;
+    padding: 0 14px;
+  }
+  body:has(.checkout-layout) .whatsapp-floating {
+    display: none;
+  }
+  .purchase-row {
+    grid-template-columns: 1fr 1fr;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+  .purchase-row > div {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .purchase-row .button {
+    width: 100%;
+    min-height: 48px;
+    padding-inline: 10px;
+  }
+}
+
+@media (max-width: 340px) {
+  .whatsapp-floating span {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .catalog-card,
   .catalog-card .product-image,
@@ -5260,7 +5340,9 @@ body {
   background: color-mix(in srgb, var(--ink) 82%, transparent);
   font-size: 12px;
 }
-.address-map-lock > small { opacity: .9; }
+.address-map-lock > small {
+  opacity: 0.9;
+}
 .address-map-pin svg {
   width: 32px;
   height: 32px;
@@ -5300,7 +5382,7 @@ body {
   font-size: 13px;
 }
 .address-map-toolbar button:disabled {
-  opacity: .38;
+  opacity: 0.38;
   cursor: not-allowed;
 }
 .address-map-toolbar div {
@@ -5326,7 +5408,9 @@ body {
   padding: 10px;
   border-top: 1px solid var(--line);
 }
-.map-edit-actions .button { min-height: 42px; }
+.map-edit-actions .button {
+  min-height: 42px;
+}
 .location-accuracy {
   display: inline-flex;
   align-items: center;

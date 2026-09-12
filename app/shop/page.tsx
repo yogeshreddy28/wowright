@@ -10,6 +10,7 @@ import {
   getCatalogProducts,
 } from '@/lib/catalog-repository';
 import { getStartingPrice } from '@/lib/services/pricing';
+import { toProductCardData } from '@/lib/product-card-data';
 export const metadata: Metadata = {
   title: 'Shop personalized products',
   description:
@@ -116,7 +117,7 @@ export default async function Shop({
             {products.map((product) => (
               <ProductCard
                 key={product.id}
-                product={product}
+                product={toProductCardData(product)}
                 density="shop"
                 placement="shop"
               />

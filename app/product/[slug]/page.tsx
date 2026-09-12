@@ -12,6 +12,8 @@ import {
   getRelatedProducts,
 } from '@/lib/catalog-repository';
 import { formatMoney, getStartingPrice } from '@/lib/services/pricing';
+import { createWhatsAppInterestURL } from '@/lib/services/whatsapp';
+import { toProductCardData } from '@/lib/product-card-data';
 import {
   Clock,
   MapPin,
@@ -57,6 +59,14 @@ export default async function ProductPage({
     product.productType === 'customizable';
   const related = await getRelatedProducts(product);
   const startingPrice = getStartingPrice(product);
+  const productURL = new URL(
+    `/product/${product.slug}`,
+    process.env.SITE_URL || 'https://wowright.in',
+  ).toString();
+  const whatsappURL = createWhatsAppInterestURL({
+    productName: product.name,
+    productURL,
+  });
   const schema = {
     '@context': 'https://schema.org',
     '@type': 'Product',
@@ -78,7 +88,10 @@ export default async function ProductPage({
         },
   };
   return (
-    <AppShell>
+    <AppShell
+      whatsappContext={{ productName: product.name, productURL }}
+      hideFloatingWhatsApp
+    >
       <CommerceEvent
         name="ViewContent"
         path={`/product/${product.slug}`}
@@ -141,11 +154,16 @@ export default async function ProductPage({
               Request a custom quote
             </Link>
           ) : (
-            <ProductConfigurator product={product} />
+            <ProductConfigurator product={product} whatsappURL={whatsappURL} />
           )}
-          <button className="assistant-inline" data-assistant-hint>
-            <MessageCircle /> Need help choosing? Ask the WOW Assistant
-          </button>
+          <a
+            className="assistant-inline"
+            href={whatsappURL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <MessageCircle /> Questions? Talk to WOW RIGHT on WhatsApp
+          </a>
           <div className="product-assurances">
             <span>
               <Clock />{' '}
@@ -157,7 +175,10 @@ export default async function ProductPage({
               <MapPin /> Bengaluru-focused delivery
             </span>
             <span>
-              <ShieldCheck /> Price and availability verified at checkout
+              <MessageCircle /> WhatsApp support
+            </span>
+            <span>
+              <ShieldCheck /> COD and open-box handover where supported
             </span>
           </div>
         </div>
@@ -217,7 +238,7 @@ export default async function ProductPage({
             {related.map((item) => (
               <ProductCard
                 key={item.id}
-                product={item}
+                product={toProductCardData(item)}
                 density="shop"
                 placement="related"
               />

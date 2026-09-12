@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { AppShell } from '@/components/app-shell';
 import { ProductCard } from '@/components/product-card';
+import { toProductCardData } from '@/lib/product-card-data';
 import {
   getCatalogCategories,
   getCatalogProducts,
@@ -49,7 +50,7 @@ export default async function CategoryPage({
         <div className="product-grid">
           {products.map((product) => (
             <ProductCard
-              product={product}
+              product={toProductCardData(product)}
               key={product.id}
               density="shop"
               placement="category"

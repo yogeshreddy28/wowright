@@ -3,6 +3,7 @@ import {
   createWhatsAppOrderMessage,
   createWhatsAppOrderURL,
   createOrderUpdateURL,
+  createWhatsAppInterestURL,
 } from '@/lib/services/whatsapp';
 import { AI_UNAVAILABLE_MESSAGE, createAIProvider } from '@/lib/services/ai';
 
@@ -65,6 +66,24 @@ describe('WhatsApp and fallback', () => {
     const url = createWhatsAppOrderURL(order, '+91 93531 93080');
     expect(url.startsWith('https://wa.me/919353193080?text=')).toBe(true);
     expect(decodeURIComponent(url)).toContain("I'd like to confirm my order");
+  });
+  it('creates contextual and generic WhatsApp shopping links', () => {
+    const product = createWhatsAppInterestURL(
+      {
+        productName: 'Baby Krishna Chibi Statue',
+        productURL: 'https://wowright.in/product/baby-krishna-chibi-statue',
+      },
+      '+91 93531 93080',
+    );
+    const productText = new URL(product).searchParams.get('text');
+    expect(product).toMatch(/^https:\/\/wa\.me\/919353193080\?text=/);
+    expect(productText).toContain('Baby Krishna Chibi Statue');
+    expect(productText).toContain(
+      'https://wowright.in/product/baby-krishna-chibi-statue',
+    );
+    expect(new URL(createWhatsAppInterestURL()).searchParams.get('text')).toBe(
+      'Hi WOW RIGHT, I visited your website and would like some help.',
+    );
   });
   it('returns an unavailable provider without a key', async () => {
     const provider = createAIProvider({

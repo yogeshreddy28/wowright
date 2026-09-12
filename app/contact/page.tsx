@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { AppShell } from '@/components/app-shell';
 import { ArrowRight, MessageCircle, Sparkles } from 'lucide-react';
+import { createWhatsAppInterestURL } from '@/lib/services/whatsapp';
 export default function Contact() {
+  const whatsappURL = createWhatsAppInterestURL();
   return (
     <AppShell>
       <section className="editorial-page contact-page">
@@ -16,7 +18,7 @@ export default function Contact() {
           conversation on WhatsApp.
         </p>
         <div className="contact-cards">
-          <a href="https://wa.me/919353193080" target="_blank" rel="noreferrer">
+          <a href={whatsappURL} target="_blank" rel="noreferrer">
             <MessageCircle />
             <b>WhatsApp</b>
             <span>+91 93531 93080</span>
@@ -28,12 +30,12 @@ export default function Contact() {
             <span>Share an idea or upload a file</span>
             <small>Private quote request</small>
           </Link>
-          <div>
+          <a href={whatsappURL} target="_blank" rel="noreferrer">
             <Sparkles />
-            <b>WOW Assistant</b>
-            <span>Open “Need help choosing?”</span>
-            <small>Available across the shop</small>
-          </div>
+            <b>Product help</b>
+            <span>Ask about finishes or customization</span>
+            <small>Personal help on WhatsApp</small>
+          </a>
         </div>
       </section>
     </AppShell>

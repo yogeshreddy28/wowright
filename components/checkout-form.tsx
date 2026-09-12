@@ -18,12 +18,12 @@ import {
   type DeliveryConfig,
 } from '@/lib/services/delivery';
 import { emitCompanionEvent } from '@/lib/companion/events';
-import { useCompanion } from './wow-companion/companion-context';
 import { launchTotals } from '@/lib/services/launch-rules';
 import { trackCommerce } from '@/lib/analytics-client';
 import { AddressLocationPicker } from './address-location-picker';
 import { ProductImage } from './product-image';
 import { AddressLabelSelector } from './address-label-selector';
+import { WhatsAppHelpLink } from './whatsapp-help-link';
 const states = [
   'Karnataka',
   'Andhra Pradesh',
@@ -39,12 +39,16 @@ const states = [
 ];
 export function CheckoutForm() {
   const store = useStore();
-  const companion = useCompanion();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [account, setAccount] = useState<{ name: string; mobile: string; email?: string; email_verified_at?: string | null } | null>(null);
+  const [account, setAccount] = useState<{
+    name: string;
+    mobile: string;
+    email?: string;
+    email_verified_at?: string | null;
+  } | null>(null);
   const [preview, setPreview] = useState<{
     key: string;
     totals?: ReturnType<typeof launchTotals>;
@@ -127,11 +131,14 @@ export function CheckoutForm() {
     };
   }, [authenticated, previewKey, previewAttempt]);
   useEffect(() => {
-    trackCommerce('InitiateCheckout', { cartSize: store.items.length });
+    trackCommerce('InitiateCheckout', {
+      cartSize: store.items.length,
+      value: cartTotals.total,
+    });
     emitCompanionEvent('CHECKOUT_STARTED', {
       metadata: { cartSize: store.items.length },
     });
-  }, [store.items.length, store.sessionId]);
+  }, [cartTotals.total, store.items.length, store.sessionId]);
   useEffect(() => {
     fetch('/api/account/addresses')
       .then(async (response) =>
@@ -147,7 +154,12 @@ export function CheckoutForm() {
       .then(async (response) =>
         response.ok
           ? (response.json() as Promise<{
-              customer: { name: string; mobile: string; email?: string; email_verified_at?: string | null };
+              customer: {
+                name: string;
+                mobile: string;
+                email?: string;
+                email_verified_at?: string | null;
+              };
             }>)
           : null,
       )
@@ -247,13 +259,9 @@ export function CheckoutForm() {
           analyticsConsent:
             localStorage.getItem('wow_analytics_consent') === 'granted',
           companion: {
-            engaged: companion.context.companionEngaged,
-            assistedCart:
-              companion.context.companionEngaged &&
-              companion.context.behavior.lastEvent === 'ADD_TO_CART',
-            assistedCheckout: companion.context.companionEngaged,
-            conversationId: companion.context.conversationId,
-            campaign: companion.context.campaign,
+            engaged: false,
+            assistedCart: false,
+            assistedCheckout: false,
           },
         }),
       });
@@ -307,7 +315,9 @@ export function CheckoutForm() {
         <section className="empty-state">
           <h1>Sign in before checkout</h1>
           <p>Your cart is saved. Taking you to the secure account step…</p>
-          <Link className="button primary" href="/account?returnTo=checkout">Continue to account</Link>
+          <Link className="button primary" href="/account?returnTo=checkout">
+            Continue to account
+          </Link>
         </section>
       </AppShell>
     );
@@ -340,7 +350,12 @@ export function CheckoutForm() {
             <div className="field-grid">
               <label className="wide">
                 Full name
-                <input name="name" required autoComplete="name" defaultValue={account?.name} />
+                <input
+                  name="name"
+                  required
+                  autoComplete="name"
+                  defaultValue={account?.name}
+                />
               </label>
               <label>
                 Mobile number
@@ -355,7 +370,14 @@ export function CheckoutForm() {
               </label>
               <label>
                 Verified email
-                <input name="email" type="email" required readOnly autoComplete="email" defaultValue={account?.email || ''} />
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  readOnly
+                  autoComplete="email"
+                  defaultValue={account?.email || ''}
+                />
               </label>
             </div>
           </section>
@@ -369,16 +391,45 @@ export function CheckoutForm() {
             </div>
             <div className="field-grid">
               {addresses.length > 0 && (
-                <div className="saved-address-choices wide" role="radiogroup" aria-label="Saved delivery addresses">
+                <div
+                  className="saved-address-choices wide"
+                  role="radiogroup"
+                  aria-label="Saved delivery addresses"
+                >
                   <h3>Choose a saved address</h3>
                   {addresses.map((address) => (
-                    <button type="button" role="radio" aria-checked={selectedAddressId === String(address.id)} className={selectedAddressId === String(address.id) ? 'selected' : ''} key={String(address.id)} onClick={() => applyAddress(String(address.id))}>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={selectedAddressId === String(address.id)}
+                      className={
+                        selectedAddressId === String(address.id)
+                          ? 'selected'
+                          : ''
+                      }
+                      key={String(address.id)}
+                      onClick={() => applyAddress(String(address.id))}
+                    >
                       <b>{String(address.label || 'Delivery address')}</b>
-                      <span>{String(address.line1)}, {String(address.locality)} {String(address.pin_code)}</span>
+                      <span>
+                        {String(address.line1)}, {String(address.locality)}{' '}
+                        {String(address.pin_code)}
+                      </span>
                     </button>
                   ))}
-                  <button type="button" role="radio" aria-checked={!selectedAddressId} className={!selectedAddressId ? 'selected' : ''} onClick={() => { setSelectedAddressId(''); setAddressLabelType(''); formRef.current?.reset(); }}>
-                    <b>Use a new address</b><span>Enter or detect another delivery location</span>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={!selectedAddressId}
+                    className={!selectedAddressId ? 'selected' : ''}
+                    onClick={() => {
+                      setSelectedAddressId('');
+                      setAddressLabelType('');
+                      formRef.current?.reset();
+                    }}
+                  >
+                    <b>Use a new address</b>
+                    <span>Enter or detect another delivery location</span>
                   </button>
                 </div>
               )}
@@ -440,10 +491,33 @@ export function CheckoutForm() {
               </div>
             </div>
             <div className="field-grid">
-              <AddressLocationPicker key={selectedAddressId || 'new'} initialLatitude={Number(addresses.find((a) => String(a.id) === selectedAddressId)?.latitude) || null} initialLongitude={Number(addresses.find((a) => String(a.id) === selectedAddressId)?.longitude) || null} initialAccuracy={Number(addresses.find((a) => String(a.id) === selectedAddressId)?.location_accuracy) || null} />
+              <AddressLocationPicker
+                key={selectedAddressId || 'new'}
+                initialLatitude={
+                  Number(
+                    addresses.find((a) => String(a.id) === selectedAddressId)
+                      ?.latitude,
+                  ) || null
+                }
+                initialLongitude={
+                  Number(
+                    addresses.find((a) => String(a.id) === selectedAddressId)
+                      ?.longitude,
+                  ) || null
+                }
+                initialAccuracy={
+                  Number(
+                    addresses.find((a) => String(a.id) === selectedAddressId)
+                      ?.location_accuracy,
+                  ) || null
+                }
+              />
               {!selectedAddressId && (
                 <div className="save-address-prompt wide">
-                  <AddressLabelSelector value={addressLabelType} onChange={setAddressLabelType} />
+                  <AddressLabelSelector
+                    value={addressLabelType}
+                    onChange={setAddressLabelType}
+                  />
                 </div>
               )}
             </div>
@@ -590,13 +664,10 @@ export function CheckoutForm() {
                 : 'Place your Cash on Delivery order here. Once saved, it will appear in My Orders.'}
             </p>
           </div>
-          <button
-            className="checkout-assistant-link"
-            type="button"
-            data-assistant-hint
-          >
-            Need help with checkout? Ask WOW Companion
-          </button>
+          <WhatsAppHelpLink
+            className="checkout-whatsapp-help"
+            label="Need help? Ask us on WhatsApp"
+          />
           <button
             className={`button ${paymentMethod === 'UPI' ? 'whatsapp' : 'primary'} full`}
             disabled={

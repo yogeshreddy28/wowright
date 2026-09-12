@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { MessageCircle, Sparkles } from 'lucide-react';
 import { BrandLogo } from './brand-logo';
+import { createWhatsAppInterestURL } from '@/lib/services/whatsapp';
 export function SiteFooter() {
+  const whatsappURL = createWhatsAppInterestURL();
   return (
     <footer className="site-footer">
       <div className="footer-brand">
@@ -27,7 +29,7 @@ export function SiteFooter() {
         </div>
         <div>
           <b>Talk to us</b>
-          <a href="https://wa.me/919353193080" target="_blank" rel="noreferrer">
+          <a href={whatsappURL} target="_blank" rel="noreferrer">
             <MessageCircle /> WhatsApp
           </a>
           <span>+91 93531 93080</span>
