@@ -148,6 +148,30 @@ it('Purchase is saved atomically and deduplicated, and respects Meta consent', a
       )
       .get()?.n,
   ).toBe(1);
+  const purchasePayload = JSON.parse(
+    String(
+      database.sqlite
+        .prepare(
+          "SELECT payload FROM commerce_outbox WHERE event_name='Purchase'",
+        )
+        .get()?.payload,
+    ),
+  );
+  const purchasedProductIds = database.sqlite
+    .prepare('SELECT product_id FROM order_items WHERE order_id=? ORDER BY id')
+    .all(order.id)
+    .map((item) => item.product_id);
+  expect(purchasePayload.custom_data).toMatchObject({
+    currency: 'INR',
+    value: order.total,
+    content_type: 'product',
+    content_ids: purchasedProductIds,
+  });
+  expect(purchasePayload.custom_data.contents).toEqual(
+    expect.arrayContaining(
+      purchasedProductIds.map((id) => expect.objectContaining({ id })),
+    ),
+  );
   vi.stubEnv('META_PIXEL_ID', '123456789');
   vi.stubEnv('META_CAPI_ACCESS_TOKEN', 'isolated-test-token');
   vi.stubEnv('META_API_VERSION', 'v25.0');

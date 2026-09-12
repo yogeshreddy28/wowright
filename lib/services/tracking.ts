@@ -36,6 +36,21 @@ export async function prepareCommerceEvent(
         true;
     } catch {}
   const sessionId = order.session_id || stored?.session_id || null;
+  const purchasedItems = await db
+    .prepare(
+      'SELECT product_id,quantity,unit_price FROM order_items WHERE order_id=? ORDER BY id',
+    )
+    .bind(order.id)
+    .all<{
+      product_id: string;
+      quantity: number;
+      unit_price: number;
+    }>();
+  const contents = purchasedItems.results.map((item) => ({
+    id: item.product_id,
+    quantity: Number(item.quantity),
+    item_price: Number(item.unit_price),
+  }));
   const payload = JSON.stringify({
     event_id: id,
     event_name: name,
@@ -45,7 +60,13 @@ export async function prepareCommerceEvent(
     user_data: {
       external_id: sessionId ? [await createHashToken(sessionId)] : [],
     },
-    custom_data: { value: order.total, currency: 'INR' },
+    custom_data: {
+      value: order.total,
+      currency: 'INR',
+      content_type: contents.length ? 'product' : undefined,
+      content_ids: contents.map((item) => item.id),
+      contents,
+    },
     consent,
   });
   return (token?: string): D1PreparedStatement[] => [
