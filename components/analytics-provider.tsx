@@ -15,7 +15,15 @@ export function AnalyticsProvider() {
     [consent, setConsent] = useState<string | null | undefined>(undefined),
     [pixel, setPixel] = useState('');
   useEffect(() => {
-    setConsent(localStorage.getItem('wow_analytics_consent'));
+    // Some privacy-focused browsers disable Web Storage entirely.  Consent UI
+    // must still render in that case instead of leaving analytics hydration
+    // stuck in its initial state.
+    let storedConsent: string | null = null;
+    try {
+      storedConsent =
+        window.localStorage?.getItem('wow_analytics_consent') ?? null;
+    } catch {}
+    setConsent(storedConsent);
     fetch('/api/analytics/config')
       .then((r) => r.json())
       .then((d: any) => setPixel(d.pixelId || ''))
@@ -38,16 +46,29 @@ export function AnalyticsProvider() {
         .map((k) => [k, params.get(k)!.slice(0, 200)]),
     );
     if (Object.keys(campaign).length)
-      sessionStorage.setItem('wow_campaign', JSON.stringify(campaign));
+      try {
+        window.sessionStorage?.setItem(
+          'wow_campaign',
+          JSON.stringify(campaign),
+        );
+      } catch {}
   }, []);
   useEffect(() => {
     if (!path || path.startsWith('/admin') || path.startsWith('/delivery'))
       return;
     trackCommerce('PageView', {
       device: innerWidth < 768 ? 'mobile' : 'desktop',
-      returning: Boolean(localStorage.getItem('wow_visited')),
+      returning: (() => {
+        try {
+          return Boolean(window.localStorage?.getItem('wow_visited'));
+        } catch {
+          return false;
+        }
+      })(),
     });
-    localStorage.setItem('wow_visited', 'true');
+    try {
+      window.localStorage?.setItem('wow_visited', 'true');
+    } catch {}
   }, [path]);
   useEffect(() => {
     if (path?.startsWith('/admin') || path?.startsWith('/delivery')) {
@@ -132,7 +153,9 @@ export function AnalyticsProvider() {
   )
     return null;
   function choose(value: string) {
-    localStorage.setItem('wow_analytics_consent', value);
+    try {
+      window.localStorage?.setItem('wow_analytics_consent', value);
+    } catch {}
     setConsent(value);
     if (value !== 'granted') window.fbq?.('consent', 'revoke');
     if (value !== 'granted') window.__wowAnalyticsQueue = [];

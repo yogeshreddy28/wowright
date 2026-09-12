@@ -20,12 +20,18 @@ export function trackCommerce(
   productId?: string,
 ) {
   if (typeof window === 'undefined') return;
+  let consent = false;
+  try {
+    consent =
+      window.localStorage?.getItem('wow_analytics_consent') === 'granted';
+  } catch {}
   const eventId = crypto.randomUUID(),
-    path = window.location.pathname,
-    consent = localStorage.getItem('wow_analytics_consent') === 'granted';
+    path = window.location.pathname;
   let campaign: Record<string, string> = {};
   try {
-    campaign = JSON.parse(sessionStorage.getItem('wow_campaign') || '{}');
+    campaign = JSON.parse(
+      window.sessionStorage?.getItem('wow_campaign') || '{}',
+    );
   } catch {}
   const detail = {
     name,
@@ -33,7 +39,13 @@ export function trackCommerce(
     productId,
     eventId,
     path,
-    sessionId: localStorage.getItem('mm_session') || undefined,
+    sessionId: (() => {
+      try {
+        return window.localStorage?.getItem('mm_session') || undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
     consent,
   };
   window.__wowAnalyticsQueue = [
