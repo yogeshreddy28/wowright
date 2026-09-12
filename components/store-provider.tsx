@@ -20,22 +20,30 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [toast, setToast] = useState('');
   useEffect(() => {
-    const stored = localStorage.getItem('mm_cart');
+    let stored: string | null = null;
+    let sid: string | null = null;
+    try {
+      stored = window.localStorage?.getItem('mm_cart') ?? null;
+      sid = window.localStorage?.getItem('mm_session') ?? null;
+    } catch {}
     if (stored)
       try {
         setItems(JSON.parse(stored));
       } catch {}
-    let sid = localStorage.getItem('mm_session');
     if (!sid) {
       sid = crypto.randomUUID();
-      localStorage.setItem('mm_session', sid);
+      try {
+        window.localStorage?.setItem('mm_session', sid);
+      } catch {}
     }
     setSessionId(sid);
     setHydrated(true);
   }, []);
   useEffect(() => {
     if (sessionId && hydrated)
-      localStorage.setItem('mm_cart', JSON.stringify(items));
+      try {
+        window.localStorage?.setItem('mm_cart', JSON.stringify(items));
+      } catch {}
   }, [items, sessionId, hydrated]);
   const notify = (s: string) => {
     setToast(s);
@@ -47,7 +55,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       sessionId,
       add: (item: CartItem) => {
         setItems((x) => [...x, item]);
-        trackCommerce('AddToCart',{quantity:item.quantity,value:item.unitPrice*item.quantity},item.productId);
+        trackCommerce(
+          'AddToCart',
+          { quantity: item.quantity, value: item.unitPrice * item.quantity },
+          item.productId,
+        );
         emitCompanionEvent('ADD_TO_CART', {
           productId: item.productId,
           metadata: { quantity: item.quantity, selections: item.selections },
@@ -59,7 +71,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setItems((x) => x.filter((i) => i.id !== id));
         emitCompanionEvent('REMOVE_FROM_CART', { productId: item?.productId });
         notify('Removed from cart');
-        trackCommerce('remove_from_cart',{},item?.productId);
+        trackCommerce('remove_from_cart', {}, item?.productId);
       },
       quantity: (id: string, n: number) =>
         setItems((x) =>
