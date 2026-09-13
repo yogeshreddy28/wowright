@@ -1,6 +1,11 @@
 import { CommerceError } from './launch-rules';
 
-export type CashSummary = { collected: number; handedOver: number; held: number };
+export type CashSummary = {
+  collected: number;
+  handedOver: number;
+  held: number;
+  discrepancy?: number;
+};
 export function calculateCashHeld(collected: number, handedOver: number): CashSummary {
   if (![collected, handedOver].every(Number.isSafeInteger) || collected < 0 || handedOver < 0 || handedOver > collected)
     throw new CommerceError('Invalid cash reconciliation amount.');
@@ -11,7 +16,19 @@ export async function getCashSummary(db: D1Database, personId: string) {
   const row = await db.prepare(`SELECT
     COALESCE((SELECT SUM(pc.amount_collected) FROM payment_collections pc JOIN orders o ON o.id=pc.order_id WHERE pc.person_id=? AND pc.method='cash' AND o.is_test=0),0) collected,
     COALESCE((SELECT SUM(cs.amount) FROM cash_settlements cs WHERE cs.person_id=?),0) handed_over`).bind(personId, personId).first<{ collected: number; handed_over: number }>();
-  return calculateCashHeld(Number(row?.collected || 0), Number(row?.handed_over || 0));
+  const collected = Number(row?.collected || 0);
+  const handedOver = Number(row?.handed_over || 0);
+  // An immutable handover ledger entry may outlive a test collection after a
+  // historical reset. Keep Delivery usable, show no negative cash balance,
+  // and preserve the mismatch for reconciliation instead of hiding it.
+  if (handedOver > collected)
+    return {
+      collected,
+      handedOver,
+      held: 0,
+      discrepancy: handedOver - collected,
+    };
+  return calculateCashHeld(collected, handedOver);
 }
 
 export async function recordCashSettlement(db: D1Database, personId: string, amount: number, note = '') {

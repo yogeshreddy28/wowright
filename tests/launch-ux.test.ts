@@ -24,6 +24,16 @@ describe('launch UX security and accounting rules', () => {
     await expect(recordCashSettlement(database.db, 'driver', 350)).rejects.toThrow('cannot exceed');
   });
 
+  it('keeps Delivery usable when an older reset leaves a settlement discrepancy', async () => {
+    database.sqlite.exec("INSERT INTO delivery_people(id,name,mobile,password_hash) VALUES('driver','Driver','919000000001','x'); INSERT INTO cash_settlements(id,person_id,amount,actor,created_at) VALUES('legacy-settlement','driver',598,'admin',CURRENT_TIMESTAMP)");
+    expect(await getCashSummary(database.db, 'driver')).toEqual({
+      collected: 0,
+      handedOver: 598,
+      held: 0,
+      discrepancy: 598,
+    });
+  });
+
   it('does not notify on initial history or repeated polling', () => {
     expect(shouldNotifyNewOrders(0, 4, false)).toBe(false);
     expect(shouldNotifyNewOrders(4, 4, true)).toBe(false);
