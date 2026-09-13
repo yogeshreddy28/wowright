@@ -194,4 +194,19 @@ describe('Admin-assisted authoritative order creation', () => {
       database.sqlite.prepare('SELECT COUNT(*) count FROM orders').get()!.count,
     ).toBe(1);
   });
+
+  it('isolates an explicitly marked Admin rehearsal from live reporting', async () => {
+    await createAssistedOrder(database.db, order({ testMode: true }));
+    expect(
+      database.sqlite
+        .prepare('SELECT is_test FROM customers')
+        .get(),
+    ).toMatchObject({ is_test: 1 });
+    expect(
+      database.sqlite.prepare('SELECT is_test FROM orders').get(),
+    ).toMatchObject({ is_test: 1 });
+    expect(
+      database.sqlite.prepare('SELECT is_test FROM analytics_events').get(),
+    ).toMatchObject({ is_test: 1 });
+  });
 });

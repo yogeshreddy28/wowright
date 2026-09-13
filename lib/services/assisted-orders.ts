@@ -33,6 +33,10 @@ const addressSchema = z.object({
 });
 
 export const assistedOrderInput = z.object({
+  // Protected Admin API only. The customer-facing builder never sends this.
+  // It exists so controlled production rehearsals remain excluded from
+  // operational reporting, Meta events and clean-launch data.
+  testMode: z.boolean().default(false),
   idempotencyKey: z.string().min(8).max(100),
   customer: z.object({
     mobile: z.string(),
@@ -383,6 +387,7 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
   const trackingToken = randomToken();
   const trackingHash = await sha256(trackingToken);
   const auditMetadata = {
+    testMode: input.testMode,
     source: input.source,
     catalogueSubtotal: items.reduce(
       (sum, item) => sum + item.cataloguePrice * item.quantity,
@@ -405,7 +410,7 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
     statements.push(
       db
         .prepare(
-          'INSERT INTO customers (id,name,mobile,email,email_normalized,auth_method,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
+          'INSERT INTO customers (id,name,mobile,email,email_normalized,auth_method,is_test,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
         )
         .bind(
           customerId,
@@ -414,6 +419,7 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
           email,
           email,
           'legacy',
+          input.testMode ? 1 : 0,
           now,
           now,
         ),
@@ -446,8 +452,8 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
   statements.push(
     db
       .prepare(
-        `INSERT INTO orders (id,order_number,idempotency_key,customer_id,address_id,status,payment_status,payment_method,customer_email,subtotal,delivery_amount,total,customer_notes,latitude,longitude,location_accuracy,estimated_delivery_date,campaign_attribution,source,created_by,admin_discount,override_reason,order_type,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO orders (id,order_number,idempotency_key,customer_id,address_id,status,payment_status,payment_method,customer_email,subtotal,delivery_amount,total,customer_notes,latitude,longitude,location_accuracy,estimated_delivery_date,campaign_attribution,source,created_by,admin_discount,override_reason,order_type,is_test,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         orderId,
@@ -474,6 +480,7 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
           items.reduce((sum, item) => sum + item.discount, 0),
         input.overrideReason || null,
         preview.custom ? 'customizable' : 'normal',
+        input.testMode ? 1 : 0,
         now,
         now,
       ),
@@ -555,7 +562,7 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
       .bind(now, now, customerId),
     db
       .prepare(
-        'INSERT INTO analytics_events (id,customer_id,name,path,order_id,metadata,created_at) VALUES (?,?,?,?,?,?,?)',
+        'INSERT INTO analytics_events (id,customer_id,name,path,order_id,metadata,is_test,created_at) VALUES (?,?,?,?,?,?,?,?)',
       )
       .bind(
         crypto.randomUUID(),
@@ -568,6 +575,7 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
           total,
           paymentMethod: input.paymentMethod,
         }),
+        input.testMode ? 1 : 0,
         now,
       ),
   );

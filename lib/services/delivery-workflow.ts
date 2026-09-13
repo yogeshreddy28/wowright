@@ -71,14 +71,15 @@ export async function assignBatch(db: D1Database, raw: unknown) {
       );
   }
   const id = crypto.randomUUID(),
-    now = new Date().toISOString();
+    now = new Date().toISOString(),
+    testBatch = orders.every((order) => Boolean(order.is_test)) ? 1 : 0;
   // Trigger on delivery_stops rechecks readiness within the atomic D1 batch.
   const statements = [
     db
       .prepare(
-        'INSERT INTO delivery_batches (id,person_id,delivery_date,time_window,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+        'INSERT INTO delivery_batches (id,person_id,delivery_date,time_window,is_test,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
       )
-      .bind(id, data.personId, data.date, data.timeWindow, now, now),
+      .bind(id, data.personId, data.date, data.timeWindow, testBatch, now, now),
   ];
   orders.forEach((order, index) =>
     statements.push(
