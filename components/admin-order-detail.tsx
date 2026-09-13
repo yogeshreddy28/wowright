@@ -87,6 +87,12 @@ export function AdminOrderDetail({ id }: { id: string }) {
             <div>
               <p className="eyebrow">Order workspace</p>
               <h1>{o.order_number}</h1>
+              <p className="order-source">
+                <b>Source:</b>{' '}
+                {o.source === 'website'
+                  ? 'Website checkout'
+                  : `${String(o.source || 'admin').replace('_', ' ')} · Admin created`}
+              </p>
               <DeliveryDate
                 date={o.promised_delivery_date || o.estimated_delivery_date}
                 status={o.status}
@@ -185,6 +191,22 @@ export function AdminOrderDetail({ id }: { id: string }) {
                   </div>
                 ))}
               </details>
+              {data.audit?.length > 0 && (
+                <details className="detail-card ux-secondary-details">
+                  <summary>
+                    Admin audit history <span>{data.audit.length} entries</span>
+                  </summary>
+                  {data.audit.map((entry: any, index: number) => (
+                    <p key={entry.created_at + index}>
+                      <b>{String(entry.action).replaceAll('_', ' ')}</b>{' '}
+                      <small>
+                        {new Date(entry.created_at).toLocaleString('en-IN')} ·{' '}
+                        {entry.actor}
+                      </small>
+                    </p>
+                  ))}
+                </details>
+              )}
               <details className="detail-card ux-secondary-details">
                 <summary>
                   Customer conversation{' '}
@@ -243,7 +265,74 @@ export function AdminOrderDetail({ id }: { id: string }) {
                       : 'Awaiting owner reconciliation'}
                   </p>
                 ))}
-                {data.deliveryVerification && <div className="admin-otp-status"><b>Customer delivery code</b><p>Status: {data.deliveryVerification.otp_status || 'Not generated'}</p>{data.deliveryVerification.override_reason && <p>Override reason: {data.deliveryVerification.override_reason}</p>}{data.deliveryVerification.status === 'otp_pending' && !['verified','admin_override'].includes(data.deliveryVerification.otp_status) && <form onSubmit={async (event) => { event.preventDefault(); const reason = String(new FormData(event.currentTarget).get('reason') || ''); if (!confirm('Override customer OTP for this delivery? This is permanently audited.')) return; const response = await fetch('/api/admin/delivery/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stopId: data.deliveryVerification.stop_id, reason }) }); const body = await response.json() as { error?: string }; if (!response.ok) setError(body.error || 'Override failed.'); else { setNotice('Delivery OTP override recorded.'); await load(); } }}><label>Exceptional override reason<textarea name="reason" minLength={10} maxLength={500} required /></label><button className="button secondary" disabled={busy}>Record Admin override</button></form>}</div>}
+                {data.deliveryVerification && (
+                  <div className="admin-otp-status">
+                    <b>Customer delivery code</b>
+                    <p>
+                      Status:{' '}
+                      {data.deliveryVerification.otp_status || 'Not generated'}
+                    </p>
+                    {data.deliveryVerification.override_reason && (
+                      <p>
+                        Override reason:{' '}
+                        {data.deliveryVerification.override_reason}
+                      </p>
+                    )}
+                    {data.deliveryVerification.status === 'otp_pending' &&
+                      !['verified', 'admin_override'].includes(
+                        data.deliveryVerification.otp_status,
+                      ) && (
+                        <form
+                          onSubmit={async (event) => {
+                            event.preventDefault();
+                            const reason = String(
+                              new FormData(event.currentTarget).get('reason') ||
+                                '',
+                            );
+                            if (
+                              !confirm(
+                                'Override customer OTP for this delivery? This is permanently audited.',
+                              )
+                            )
+                              return;
+                            const response = await fetch(
+                              '/api/admin/delivery/otp',
+                              {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  stopId: data.deliveryVerification.stop_id,
+                                  reason,
+                                }),
+                              },
+                            );
+                            const body = (await response.json()) as {
+                              error?: string;
+                            };
+                            if (!response.ok)
+                              setError(body.error || 'Override failed.');
+                            else {
+                              setNotice('Delivery OTP override recorded.');
+                              await load();
+                            }
+                          }}
+                        >
+                          <label>
+                            Exceptional override reason
+                            <textarea
+                              name="reason"
+                              minLength={10}
+                              maxLength={500}
+                              required
+                            />
+                          </label>
+                          <button className="button secondary" disabled={busy}>
+                            Record Admin override
+                          </button>
+                        </form>
+                      )}
+                  </div>
+                )}
               </details>
             </div>
             <aside>

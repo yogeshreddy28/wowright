@@ -36,10 +36,15 @@ export async function POST(request: Request) {
       ? normalizeEmail(data.email)
       : normalizeIndianPhone(data.email);
     const customer = await env.DB.prepare(
-      'SELECT id,password_hash,email_verified_at FROM customers WHERE email_normalized=? OR (email_normalized IS NULL AND lower(trim(email))=?) OR (email_normalized IS NULL AND mobile=?)',
+      'SELECT id,password_hash,email_verified_at,account_claim_pending FROM customers WHERE email_normalized=? OR (email_normalized IS NULL AND lower(trim(email))=?) OR (email_normalized IS NULL AND mobile=?)',
     )
       .bind(identifier, identifier, identifier)
-      .first<{ id: string; password_hash: string | null; email_verified_at: string | null }>();
+      .first<{
+        id: string;
+        password_hash: string | null;
+        email_verified_at: string | null;
+        account_claim_pending: number;
+      }>();
     if (
       !customer?.password_hash ||
       !(await verifyCustomerPassword(data.password, customer.password_hash))
@@ -47,6 +52,11 @@ export async function POST(request: Request) {
       return Response.json(
         { error: 'Incorrect email or password.' },
         { status: 401 },
+      );
+    if (customer.account_claim_pending)
+      return Response.json(
+        { error: 'Verify your email to securely claim your existing orders.' },
+        { status: 403 },
       );
     return Response.json(
       { ok: true, emailVerified: Boolean(customer.email_verified_at) },
@@ -57,6 +67,9 @@ export async function POST(request: Request) {
       },
     );
   } catch {
-    return Response.json({ error: 'Incorrect email or password.' }, { status: 401 });
+    return Response.json(
+      { error: 'Incorrect email or password.' },
+      { status: 401 },
+    );
   }
 }

@@ -78,6 +78,34 @@ export async function mutateOrder(
         order.id,
         token,
       ),
+    ...(change.actor === 'admin'
+      ? [
+          db
+            .prepare(
+              'INSERT INTO order_audit_log (id,order_id,action,actor,metadata,created_at) SELECT ?,id,?,?,?,? FROM orders WHERE id=? AND last_operation_id=?',
+            )
+            .bind(
+              crypto.randomUUID(),
+              change.status && change.status !== order.status
+                ? 'status_changed'
+                : change.paymentStatus &&
+                    change.paymentStatus !== order.payment_status
+                  ? 'payment_status_changed'
+                  : 'order_updated',
+              'admin',
+              JSON.stringify({
+                fromStatus: order.status,
+                toStatus: change.status || order.status,
+                fromPaymentStatus: order.payment_status,
+                toPaymentStatus: change.paymentStatus || order.payment_status,
+                note: change.note,
+              }),
+              now,
+              order.id,
+              token,
+            ),
+        ]
+      : []),
   ]);
   if (!results[0]?.meta.changes)
     throw new CommerceError(

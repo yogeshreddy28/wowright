@@ -155,6 +155,9 @@ export const customers = sqliteTable(
     totalSpent: integer('total_spent').notNull().default(0),
     passwordHash: text('password_hash'),
     isTest: integer('is_test', { mode: 'boolean' }).notNull().default(false),
+    accountClaimPending: integer('account_claim_pending', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     ...timestamps,
   },
   (t) => [
@@ -300,6 +303,10 @@ export const orders = sqliteTable(
     promisedDeliveryDate: text('promised_delivery_date'),
     deliveryWindow: text('delivery_window'),
     deliveredAt: text('delivered_at'),
+    source: text('source').notNull().default('website'),
+    createdBy: text('created_by'),
+    adminDiscount: integer('admin_discount').notNull().default(0),
+    overrideReason: text('override_reason'),
     ...timestamps,
   },
   (t) => [
@@ -308,6 +315,7 @@ export const orders = sqliteTable(
     index('idx_orders_status_created').on(t.status, t.createdAt),
     index('idx_orders_customer').on(t.customerId),
     index('idx_orders_companion').on(t.companionEngaged, t.createdAt),
+    index('idx_orders_source_created').on(t.source, t.createdAt),
   ],
 );
 export const orderItems = sqliteTable(
@@ -369,6 +377,71 @@ export const orderTimeline = sqliteTable(
       .default(sql`CURRENT_TIMESTAMP`),
   },
   (t) => [index('idx_timeline_order').on(t.orderId)],
+);
+export const orderTrackingTokens = sqliteTable(
+  'order_tracking_tokens',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    revokedAt: text('revoked_at'),
+  },
+  (t) => [
+    uniqueIndex('idx_order_tracking_token_hash').on(t.tokenHash),
+    index('idx_order_tracking_order').on(t.orderId),
+  ],
+);
+export const orderAuditLog = sqliteTable(
+  'order_audit_log',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    action: text('action').notNull(),
+    actor: text('actor').notNull(),
+    metadata: text('metadata', { mode: 'json' }).$type<
+      Record<string, unknown>
+    >(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (t) => [index('idx_order_audit_order_created').on(t.orderId, t.createdAt)],
+);
+export const orderMilestoneMedia = sqliteTable(
+  'order_milestone_media',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    timelineId: text('timeline_id').references(() => orderTimeline.id, {
+      onDelete: 'set null',
+    }),
+    storageKey: text('storage_key').notNull(),
+    contentType: text('content_type').notNull(),
+    caption: text('caption'),
+    customerVisible: integer('customer_visible', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    createdBy: text('created_by').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (t) => [
+    index('idx_order_milestone_media_order').on(
+      t.orderId,
+      t.customerVisible,
+      t.createdAt,
+    ),
+  ],
 );
 export const conversations = sqliteTable(
   'conversations',

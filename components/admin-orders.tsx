@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Search } from 'lucide-react';
+import { ArrowRight, Plus, Search } from 'lucide-react';
 import { formatMoney } from '@/lib/services/pricing';
 import {
   orderPresentation,
@@ -14,6 +14,7 @@ export function AdminOrders({ data }: { data: Row }) {
   const [q, setQ] = useState(''),
     [status, setStatus] = useState(''),
     [payment, setPayment] = useState(''),
+    [source, setSource] = useState(''),
     [page, setPage] = useState(1),
     [rows, setRows] = useState<Row[] | null>(null),
     [busy, setBusy] = useState(false),
@@ -23,6 +24,7 @@ export function AdminOrders({ data }: { data: Row }) {
     state = status,
     method = payment,
     currentPage = 1,
+    sourceFilter = source,
   ) {
     setBusy(true);
     setError('');
@@ -32,6 +34,7 @@ export function AdminOrders({ data }: { data: Row }) {
         status: state,
         paymentStatus: method,
         page: String(currentPage),
+        source: sourceFilter,
       });
       const r = await fetch('/api/admin/orders?' + params);
       if (!r.ok) throw Error('Could not load orders. Please try again.');
@@ -49,10 +52,13 @@ export function AdminOrders({ data }: { data: Row }) {
       query = params.get('q') || '',
       state = params.get('status') || '',
       paymentState = params.get('paymentStatus') || '';
+    const sourceState = params.get('source') || '';
     setQ(query);
     setStatus(state);
     setPayment(paymentState);
-    if (query || state || paymentState) void filter(query, state, paymentState);
+    setSource(sourceState);
+    if (query || state || paymentState || sourceState)
+      void filter(query, state, paymentState, 1, sourceState);
   }, []);
   const shown = rows || data.orders || [];
   return (
@@ -65,6 +71,9 @@ export function AdminOrders({ data }: { data: Row }) {
             Open an order to review its payment, delivery date and next task.
           </p>
         </div>
+        <Link className="button primary" href="/admin/orders/create">
+          <Plus /> Create Customer Order
+        </Link>
       </header>
       <div className="ux-tabs" role="group" aria-label="Order views">
         {[
@@ -106,6 +115,25 @@ export function AdminOrders({ data }: { data: Row }) {
             onChange={(e) => setQ(e.target.value)}
           />
         </label>
+        <select
+          aria-label="Order source filter"
+          value={source}
+          onChange={(e) => {
+            const next = e.target.value;
+            setSource(next);
+            void filter(q, status, payment, 1, next);
+          }}
+        >
+          <option value="">Any source</option>
+          <option value="website">Website checkout</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="meta_ad">Meta Ad</option>
+          <option value="instagram">Instagram</option>
+          <option value="facebook">Facebook</option>
+          <option value="phone">Phone</option>
+          <option value="walk_in">Walk-in</option>
+          <option value="admin_created">All Admin-created</option>
+        </select>
         <select
           aria-label="Payment filter"
           value={payment}
@@ -176,6 +204,11 @@ export function AdminOrders({ data }: { data: Row }) {
                   </Link>
                   <small>{o.customer_name}</small>
                   <small>{dateLabel(o.created_at)}</small>
+                  <small className="order-source">
+                    {o.source === 'website'
+                      ? 'Website checkout'
+                      : `${String(o.source || 'admin').replace('_', ' ')} · Admin created`}
+                  </small>
                 </td>
                 <td>{o.products}</td>
                 <td>
@@ -221,14 +254,14 @@ export function AdminOrders({ data }: { data: Row }) {
         <button
           className="button secondary"
           disabled={busy || page === 1}
-          onClick={() => filter(q, status, payment, page - 1)}
+          onClick={() => filter(q, status, payment, page - 1, source)}
         >
           Previous
         </button>
         <button
           className="button secondary"
           disabled={busy || shown.length < 25}
-          onClick={() => filter(q, status, payment, page + 1)}
+          onClick={() => filter(q, status, payment, page + 1, source)}
         >
           Next
         </button>

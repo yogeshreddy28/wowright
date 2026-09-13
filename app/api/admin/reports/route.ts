@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const period = new URL(request.url).searchParams.get('period') || 'month',
     days = period === 'today' ? 0 : period === 'week' ? 6 : 29,
     from = addDays(localDate(), -days);
-  const [economics, collections, funnel, campaigns, outbox, costs] =
+  const [economics, collections, funnel, campaigns, outbox, costs, assisted] =
     await env.DB.batch([
       env.DB.prepare(
         "SELECT COUNT(*) delivered_orders,COALESCE(SUM(o.total),0) sales,COALESCE(SUM((SELECT SUM(i.unit_cost*i.quantity) FROM order_items i WHERE i.order_id=o.id)),0) product_cost,COALESCE(SUM((SELECT SUM(c.amount) FROM order_costs c WHERE c.order_id=o.id)),0) direct_costs,COALESCE(SUM((SELECT COUNT(*) FROM order_items i WHERE i.order_id=o.id AND i.unit_cost IS NULL)),0) missing_cost_lines FROM orders o WHERE o.is_test=0 AND o.status='delivered' AND date(o.delivered_at,'+5 hours','+30 minutes')>=?",
@@ -30,6 +30,15 @@ export async function GET(request: Request) {
       env.DB.prepare(
         'SELECT c.*,o.order_number FROM order_costs c JOIN orders o ON o.id=c.order_id ORDER BY c.created_at DESC LIMIT 50',
       ),
+      env.DB.prepare(
+        `SELECT source,COUNT(*) orders,COALESCE(SUM(total),0) revenue,
+          COALESCE(SUM(CASE WHEN status='delivered' THEN total ELSE 0 END),0) delivered_revenue,
+          COALESCE(AVG(total),0) average_order_value,
+          SUM(CASE WHEN payment_method='COD' THEN 1 ELSE 0 END) cod_orders,
+          SUM(CASE WHEN payment_method='UPI' THEN 1 ELSE 0 END) prepaid_orders
+         FROM orders WHERE is_test=0 AND created_by='admin' AND date(created_at,'+5 hours','+30 minutes')>=?
+         GROUP BY source ORDER BY orders DESC`,
+      ).bind(from),
     ]);
   const e = economics.results[0] as Record<string, number>;
   return Response.json({
@@ -46,6 +55,7 @@ export async function GET(request: Request) {
     campaigns: campaigns.results,
     outbox: outbox.results,
     costs: costs.results,
+    assistedOrders: assisted.results,
     metaConfigured: metaConfig().configured,
   });
 }

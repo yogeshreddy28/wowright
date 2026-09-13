@@ -40,33 +40,69 @@ export async function POST(request: Request) {
     const mobile = normalizeIndianPhone(data.phone);
     const email = normalizeEmail(data.email);
     const existing = await env.DB.prepare(
-      'SELECT id,password_hash FROM customers WHERE mobile=? OR email_normalized=? OR lower(trim(email))=?',
+      'SELECT id,mobile,email,email_normalized,password_hash,auth_method FROM customers WHERE mobile=? OR email_normalized=? OR lower(trim(email))=?',
     )
       .bind(mobile, email, email)
-      .first<{ id: string; password_hash: string | null }>();
-    if (existing)
+      .first<{
+        id: string;
+        mobile: string;
+        email: string | null;
+        email_normalized: string | null;
+        password_hash: string | null;
+        auth_method: string;
+      }>();
+    if (existing?.password_hash)
+      return Response.json(
+        { error: 'An account already exists for these details.' },
+        { status: 409 },
+      );
+    if (
+      existing &&
+      (existing.mobile !== mobile ||
+        normalizeEmail(existing.email || '') !== email)
+    )
       return Response.json(
         {
-          error: existing.password_hash
-            ? 'An account already exists for these details.'
-            : 'These details belong to an existing guest order. Contact WOW RIGHT to securely activate the account.',
+          error:
+            'These details belong to an existing guest order. Contact WOW RIGHT to securely activate the account.',
         },
         { status: 409 },
       );
-    const id = crypto.randomUUID();
+    const id = existing?.id || crypto.randomUUID();
     const now = new Date().toISOString();
     const passwordHash = await hashCustomerPassword(data.password);
-    await env.DB.prepare(
-      "INSERT INTO customers (id,name,mobile,email,email_normalized,email_verified_at,auth_method,password_hash,order_count,total_spent,created_at,updated_at) VALUES (?,?,?,?,?,NULL,'email',?,0,0,?,?)",
-    )
-      .bind(id, data.name, mobile, email, email, passwordHash, now, now)
-      .run();
-    const token = await createCustomerAuthToken(env.DB, id, 'verify_email', 24 * 60 * 60 * 1000);
-    const delivery = await sendVerificationEmail(email, token);
-    return Response.json(
-      { ok: true, verificationRequired: true, emailSent: delivery.sent },
-      { headers: { 'Set-Cookie': await createCustomerSession(env.DB, id) } },
+    if (existing)
+      await env.DB.prepare(
+        "UPDATE customers SET name=?,email=?,email_normalized=?,email_verified_at=NULL,auth_method='email',password_hash=?,account_claim_pending=1,updated_at=? WHERE id=?",
+      )
+        .bind(data.name, email, email, passwordHash, now, id)
+        .run();
+    else
+      await env.DB.prepare(
+        "INSERT INTO customers (id,name,mobile,email,email_normalized,email_verified_at,auth_method,password_hash,order_count,total_spent,created_at,updated_at) VALUES (?,?,?,?,?,NULL,'email',?,0,0,?,?)",
+      )
+        .bind(id, data.name, mobile, email, email, passwordHash, now, now)
+        .run();
+    const token = await createCustomerAuthToken(
+      env.DB,
+      id,
+      'verify_email',
+      24 * 60 * 60 * 1000,
     );
+    const delivery = await sendVerificationEmail(email, token);
+    return existing
+      ? Response.json({
+          ok: true,
+          verificationRequired: true,
+          emailSent: delivery.sent,
+          existingOrderClaim: true,
+        })
+      : Response.json(
+          { ok: true, verificationRequired: true, emailSent: delivery.sent },
+          {
+            headers: { 'Set-Cookie': await createCustomerSession(env.DB, id) },
+          },
+        );
   } catch (error) {
     return Response.json(
       {

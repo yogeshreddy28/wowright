@@ -7,8 +7,9 @@ export async function GET(r: Request) {
     q = (u.searchParams.get('q') || '').slice(0, 80),
     status = u.searchParams.get('status'),
     paymentStatus = u.searchParams.get('paymentStatus'),
+    source = u.searchParams.get('source'),
     page = Math.max(1, Number(u.searchParams.get('page') || 1));
-  let sql = `SELECT o.id,o.order_number,o.status,o.payment_status,o.payment_method,o.total,o.created_at,o.estimated_delivery_date,o.promised_delivery_date,c.name customer_name,c.mobile,(SELECT GROUP_CONCAT(product_name, ', ') FROM order_items WHERE order_id=o.id) products FROM orders o JOIN customers c ON c.id=o.customer_id WHERE 1=1`;
+  let sql = `SELECT o.id,o.order_number,o.status,o.payment_status,o.payment_method,o.total,o.created_at,o.estimated_delivery_date,o.promised_delivery_date,o.source,o.created_by,c.name customer_name,c.mobile,(SELECT GROUP_CONCAT(product_name, ', ') FROM order_items WHERE order_id=o.id) products FROM orders o JOIN customers c ON c.id=o.customer_id WHERE 1=1`;
   const binds: unknown[] = [];
   if (q) {
     sql += ` AND (o.order_number LIKE ? OR c.name LIKE ? OR c.mobile LIKE ?)`;
@@ -26,6 +27,12 @@ export async function GET(r: Request) {
     sql += ` AND o.payment_status=?`;
     binds.push(paymentStatus);
     if (paymentStatus === 'cod') sql += ` AND o.status<>'cancelled'`;
+  }
+  if (source === 'website') sql += ` AND o.source='website'`;
+  else if (source === 'admin_created') sql += ` AND o.created_by='admin'`;
+  else if (source) {
+    sql += ` AND o.source=?`;
+    binds.push(source);
   }
   sql += ` ORDER BY o.created_at DESC LIMIT 25 OFFSET ?`;
   binds.push((page - 1) * 25);

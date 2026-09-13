@@ -23,28 +23,39 @@ export async function GET(
     .bind(orderId, orderId)
     .first<Record<string, unknown>>();
   if (!order) return Response.json({ error: 'Not found' }, { status: 404 });
-  const [items, timeline, conversation, customizations, proofs, collections, deliveryVerification] =
-    await env.DB.batch([
-      env.DB.prepare('SELECT * FROM order_items WHERE order_id=?').bind(
-        order.id,
-      ),
-      env.DB.prepare(
-        'SELECT * FROM order_timeline WHERE order_id=? ORDER BY created_at DESC',
-      ).bind(order.id),
-      env.DB.prepare(
-        'SELECT m.* FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.session_id=? ORDER BY m.created_at',
-      ).bind(order.session_id),
-      env.DB.prepare(
-        'SELECT c.* FROM order_item_customizations c JOIN order_items i ON i.id=c.order_item_id WHERE i.order_id=?',
-      ).bind(order.id),
-      env.DB.prepare(
-        'SELECT id,created_at FROM delivery_proofs WHERE order_id=? ORDER BY created_at DESC',
-      ).bind(order.id),
-      env.DB.prepare(
-        'SELECT method,amount_due,amount_collected,settlement_status,collected_at,settled_at FROM payment_collections WHERE order_id=?',
-      ).bind(order.id),
-      env.DB.prepare("SELECT s.id stop_id,s.status,(SELECT CASE WHEN x.override_reason IS NOT NULL THEN 'admin_override' WHEN x.verified_at IS NOT NULL THEN 'verified' WHEN julianday(x.expires_at)<=julianday('now') THEN 'expired' ELSE 'pending' END FROM delivery_otps x WHERE x.stop_id=s.id AND x.invalidated_at IS NULL ORDER BY x.generated_at DESC LIMIT 1) otp_status,(SELECT x.override_reason FROM delivery_otps x WHERE x.stop_id=s.id AND x.invalidated_at IS NULL ORDER BY x.generated_at DESC LIMIT 1) override_reason FROM delivery_stops s WHERE s.order_id=? ORDER BY s.created_at DESC LIMIT 1").bind(order.id),
-    ]);
+  const [
+    items,
+    timeline,
+    conversation,
+    customizations,
+    proofs,
+    collections,
+    deliveryVerification,
+    audit,
+  ] = await env.DB.batch([
+    env.DB.prepare('SELECT * FROM order_items WHERE order_id=?').bind(order.id),
+    env.DB.prepare(
+      'SELECT * FROM order_timeline WHERE order_id=? ORDER BY created_at DESC',
+    ).bind(order.id),
+    env.DB.prepare(
+      'SELECT m.* FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.session_id=? ORDER BY m.created_at',
+    ).bind(order.session_id),
+    env.DB.prepare(
+      'SELECT c.* FROM order_item_customizations c JOIN order_items i ON i.id=c.order_item_id WHERE i.order_id=?',
+    ).bind(order.id),
+    env.DB.prepare(
+      'SELECT id,created_at FROM delivery_proofs WHERE order_id=? ORDER BY created_at DESC',
+    ).bind(order.id),
+    env.DB.prepare(
+      'SELECT method,amount_due,amount_collected,settlement_status,collected_at,settled_at FROM payment_collections WHERE order_id=?',
+    ).bind(order.id),
+    env.DB.prepare(
+      "SELECT s.id stop_id,s.status,(SELECT CASE WHEN x.override_reason IS NOT NULL THEN 'admin_override' WHEN x.verified_at IS NOT NULL THEN 'verified' WHEN julianday(x.expires_at)<=julianday('now') THEN 'expired' ELSE 'pending' END FROM delivery_otps x WHERE x.stop_id=s.id AND x.invalidated_at IS NULL ORDER BY x.generated_at DESC LIMIT 1) otp_status,(SELECT x.override_reason FROM delivery_otps x WHERE x.stop_id=s.id AND x.invalidated_at IS NULL ORDER BY x.generated_at DESC LIMIT 1) override_reason FROM delivery_stops s WHERE s.order_id=? ORDER BY s.created_at DESC LIMIT 1",
+    ).bind(order.id),
+    env.DB.prepare(
+      'SELECT action,actor,metadata,created_at FROM order_audit_log WHERE order_id=? ORDER BY created_at DESC',
+    ).bind(order.id),
+  ]);
   return Response.json({
     order,
     updateWhatsAppURL: createOrderUpdateURL({
@@ -61,6 +72,7 @@ export async function GET(
     proofs: proofs.results,
     collections: collections.results,
     deliveryVerification: deliveryVerification.results[0] || null,
+    audit: audit.results,
   });
 }
 export async function PATCH(

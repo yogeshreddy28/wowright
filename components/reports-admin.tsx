@@ -170,6 +170,28 @@ export function ReportsAdmin({
         ))}
       </section>
       <section className="detail-card">
+        <h2>WhatsApp & Admin-assisted orders</h2>
+        <p className="ux-report-note">
+          Orders entered by Admin are grouped by their real lead source and
+          remain in the normal fulfillment reports.
+        </p>
+        {!d.assistedOrders?.length && (
+          <EmptyWork
+            title="No assisted orders in this period"
+            description="WhatsApp, Meta, phone and walk-in orders created by Admin will appear here."
+          />
+        )}
+        {d.assistedOrders?.map((row: Row) => (
+          <p key={row.source}>
+            <b>{String(row.source).replaceAll('_', ' ')}</b> · {row.orders}{' '}
+            orders · {formatMoney(row.revenue)} booked ·{' '}
+            {formatMoney(row.delivered_revenue)} delivered · AOV{' '}
+            {formatMoney(Math.round(row.average_order_value))} ·{' '}
+            {row.cod_orders} COD / {row.prepaid_orders} UPI
+          </p>
+        ))}
+      </section>
+      <section className="detail-card">
         <h2>Meta event tracking</h2>
         <p>
           {d.metaConfigured
