@@ -59,6 +59,26 @@ export function CartView() {
                       <dd>{item.variantName}</dd>
                     </div>
                   )}
+                  {item.calculatedSize && (
+                    <div>
+                      <dt>Size</dt>
+                      <dd>
+                        {item.calculatedSize.selectedHeight}{' '}
+                        {item.calculatedSize.dimensionUnit} tall ·{' '}
+                        {item.calculatedSize.width} ×{' '}
+                        {item.calculatedSize.depth}{' '}
+                        {item.calculatedSize.dimensionUnit} footprint
+                      </dd>
+                    </div>
+                  )}
+                  {item.fixedSizeId && (
+                    <div>
+                      <dt>Size</dt>
+                      <dd>
+                        {item.fixedSizeLabel} — {item.selectedHeight} cm
+                      </dd>
+                    </div>
+                  )}
                   {Object.entries(item.selections).map(([k, v]) => (
                     <div key={k}>
                       <dt>{k}</dt>

@@ -73,6 +73,12 @@ export async function POST(
       'height',
       'dimension_unit',
       'dimension_display_override',
+      'resizable',
+      'minimum_height',
+      'maximum_height',
+      'default_height',
+      'size_increment',
+      'size_pricing_version',
       'material',
       'delivery_notes',
       'care_instructions',
@@ -110,6 +116,8 @@ export async function POST(
       options,
       optionValues,
       variantImages,
+      sizePriceBands,
+      sizeRecommendations,
     ] = await env.DB.batch([
       env.DB.prepare(
         'SELECT * FROM product_variants WHERE product_id=? ORDER BY sort_order',
@@ -131,6 +139,12 @@ export async function POST(
       ).bind(productId),
       env.DB.prepare(
         'SELECT pvi.* FROM product_variant_images pvi JOIN product_variants v ON v.id=pvi.variant_id WHERE v.product_id=? ORDER BY pvi.sort_order',
+      ).bind(productId),
+      env.DB.prepare(
+        'SELECT * FROM product_size_price_bands WHERE product_id=? ORDER BY sort_order,minimum_height',
+      ).bind(productId),
+      env.DB.prepare(
+        'SELECT * FROM product_size_recommendations WHERE product_id=? ORDER BY sort_order,minimum_height',
       ).bind(productId),
     ]);
     const imageIds = new Map(
@@ -260,6 +274,44 @@ export async function POST(
         );
       }
     }
+    (sizePriceBands.results as Record<string, unknown>[]).forEach((band) =>
+      statements.push(
+        env.DB.prepare(
+          'INSERT INTO product_size_price_bands(id,product_id,minimum_height,maximum_height,selling_price,filament_grams,print_minutes,support_grams,production_cost,sort_order,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        ).bind(
+          crypto.randomUUID(),
+          id,
+          band.minimum_height,
+          band.maximum_height,
+          band.selling_price,
+          band.filament_grams,
+          band.print_minutes,
+          band.support_grams,
+          band.production_cost,
+          band.sort_order,
+          band.version,
+          now,
+          now,
+        ),
+      ),
+    );
+    (sizeRecommendations.results as Record<string, unknown>[]).forEach((item) =>
+      statements.push(
+        env.DB.prepare(
+          'INSERT INTO product_size_recommendations(id,product_id,minimum_height,maximum_height,label,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+        ).bind(
+          crypto.randomUUID(),
+          id,
+          item.minimum_height,
+          item.maximum_height,
+          item.label,
+          item.description,
+          item.sort_order,
+          now,
+          now,
+        ),
+      ),
+    );
     await env.DB.batch(statements);
     return Response.json({ id, slug, sku });
   } catch (error) {

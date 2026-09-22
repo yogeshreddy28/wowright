@@ -153,6 +153,23 @@ export function AdminOrderDetail({ id }: { id: string }) {
                         · {formatMoney(i.unit_price)} each
                       </small>
                       <small>{i.product_sku || 'No SKU recorded'}</small>
+                      {i.selected_height != null && (
+                        <small className="ux-size-snapshot">
+                          {i.fixed_size_label
+                            ? `Size: ${i.fixed_size_label} — ${i.selected_height} cm`
+                            : `Custom size: ${i.selected_height} ${i.size_dimension_unit || 'cm'} tall · ${i.calculated_width} × ${i.calculated_depth} ${i.size_dimension_unit || 'cm'} footprint · Scale ${Math.round(Number(i.size_scale) * 10_000) / 100}%`}
+                        </small>
+                      )}
+                      {i.fixed_size_label && (
+                        <small>
+                          Production:{' '}
+                          {Math.floor(
+                            Number(i.estimated_print_minutes || 0) / 60,
+                          )}
+                          h {Number(i.estimated_print_minutes || 0) % 60}m · PLA{' '}
+                          {i.filament_grams}g
+                        </small>
+                      )}
                       {data.customizations
                         .filter((c: any) => c.order_item_id === i.id)
                         .map((c: any) => (

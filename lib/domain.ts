@@ -55,9 +55,53 @@ export type Product = {
     height?: number;
     unit: string;
   };
+  sizing?: ProductSizing;
+  fixedSizes?: ProductFixedSize[];
   variants?: ProductVariant[];
   rating?: number;
   reviewCount?: number;
+};
+export type ProductSizePriceBand = {
+  id: string;
+  minimumHeight: number;
+  maximumHeight: number;
+  sellingPrice: number;
+  version: number;
+};
+export type ProductFixedSize = {
+  id: string;
+  label: string;
+  heightCm: number;
+  placementNote?: string;
+  active: boolean;
+  prices: { variantId: string; sellingPrice: number }[];
+};
+export type ProductSizeRecommendation = {
+  id: string;
+  minimumHeight: number;
+  maximumHeight: number;
+  label: string;
+  description?: string;
+};
+export type ProductSizing = {
+  enabled: boolean;
+  minimumHeight?: number;
+  maximumHeight?: number;
+  defaultHeight?: number;
+  increment?: number;
+  pricingVersion: number;
+  priceBands: ProductSizePriceBand[];
+  recommendations: ProductSizeRecommendation[];
+};
+export type CalculatedProductSize = {
+  selectedHeight: number;
+  width: number;
+  depth: number;
+  scale: number;
+  pricingBandId: string;
+  pricingVersion: number;
+  dimensionUnit: string;
+  recommendation?: ProductSizeRecommendation;
 };
 export type ProductVariant = {
   id: string;
@@ -86,6 +130,10 @@ export type CartItem = {
   image?: string;
   variantId?: string;
   variantName?: string;
+  selectedHeight?: number;
+  fixedSizeId?: string;
+  fixedSizeLabel?: string;
+  calculatedSize?: CalculatedProductSize;
 };
 export type Cart = { items: CartItem[] };
 export type CheckoutCustomer = {

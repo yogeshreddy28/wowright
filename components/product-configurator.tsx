@@ -1,10 +1,19 @@
 'use client';
-import { MessageCircle, Minus, Plus, ShoppingBag } from 'lucide-react';
+import {
+  Box,
+  CheckCircle2,
+  MessageCircle,
+  Minus,
+  Plus,
+  Ruler,
+  ShoppingBag,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Product, Selection } from '@/lib/domain';
 import {
   calculateUnitPrice,
+  calculateProductSize,
   formatMoney,
   getStartingPrice,
 } from '@/lib/services/pricing';
@@ -12,6 +21,7 @@ import { emitCompanionEvent } from '@/lib/companion/events';
 import { isFinishReferenceOnly } from '@/lib/product-gallery';
 import { trackCommerce } from '@/lib/analytics-client';
 import { useStore } from './store-provider';
+import { launchTotals } from '@/lib/services/launch-rules';
 export function ProductConfigurator({
   product,
   whatsappURL,
@@ -30,6 +40,12 @@ export function ProductConfigurator({
     initialSelections.current,
   );
   const [quantity, setQuantity] = useState(1);
+  const sizing = product.sizing?.enabled ? product.sizing : undefined;
+  const [selectedHeight, setSelectedHeight] = useState<number | undefined>(
+    sizing?.defaultHeight,
+  );
+  const [fixedSizeId, setFixedSizeId] = useState('');
+  const [sizeTouched, setSizeTouched] = useState(false);
   const availableVariants = (product.variants || []).filter(
     (variant) => variant.active,
   );
@@ -38,19 +54,41 @@ export function ProductConfigurator({
       ?.id || '',
   );
   const [error, setError] = useState('');
+  const configuratorRef = useRef<HTMLDivElement>(null);
+  const customSizeWhatsAppURL = new URL(whatsappURL);
+  customSizeWhatsAppURL.searchParams.set(
+    'text',
+    `Hi WOW RIGHT, I'd like to request a custom size for ${product.name}.`,
+  );
   const store = useStore();
   const router = useRouter();
   const purchasable =
+    product.publishingStatus !== 'draft' &&
     product.availability !== 'temporarily_unavailable' &&
     product.availability !== 'discontinued';
   const price = useMemo(() => {
     try {
-      return calculateUnitPrice(product, selections, variantId || undefined)
-        .unitPrice;
+      return calculateUnitPrice(
+        product,
+        selections,
+        variantId || undefined,
+        selectedHeight,
+        fixedSizeId || undefined,
+      ).unitPrice;
     } catch {
       return null;
     }
-  }, [product, selections, variantId]);
+  }, [product, selections, variantId, selectedHeight, fixedSizeId]);
+  const selectedFixedSize = product.fixedSizes?.find(
+    (item) => item.id === fixedSizeId,
+  );
+  const calculatedSize = useMemo(() => {
+    try {
+      return calculateProductSize(product, selectedHeight);
+    } catch {
+      return undefined;
+    }
+  }, [product, selectedHeight]);
   const selectedVariant = availableVariants.find(
     (variant) => variant.id === variantId,
   );
@@ -102,6 +140,21 @@ export function ProductConfigurator({
       metadata: { price },
     });
   }, [product.id, price]);
+  useEffect(() => {
+    if (!calculatedSize || !sizeTouched) return;
+    const timer = window.setTimeout(() => {
+      trackCommerce(
+        'size_changed',
+        {
+          selectedHeight: calculatedSize.selectedHeight,
+          recommendation: calculatedSize.recommendation?.label || null,
+          pricingVersion: calculatedSize.pricingVersion,
+        },
+        product.id,
+      );
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [calculatedSize, product.id, sizeTouched]);
   function update(k: string, v: string | number | boolean) {
     const next = { ...selections, [k]: v };
     setSelections(next);
@@ -144,15 +197,30 @@ export function ProductConfigurator({
       product.id,
     );
   }
+  function priceForVariant(id: string) {
+    try {
+      return calculateUnitPrice(
+        product,
+        selections,
+        id,
+        selectedHeight,
+        fixedSizeId || undefined,
+      ).unitPrice;
+    } catch {
+      return null;
+    }
+  }
   function add(destination?: '/cart' | '/checkout') {
     try {
       if (!purchasable)
         throw new Error('This product is temporarily unavailable');
-      const unitPrice = calculateUnitPrice(
+      const priced = calculateUnitPrice(
         product,
         selections,
         variantId || undefined,
-      ).unitPrice;
+        selectedHeight,
+        fixedSizeId || undefined,
+      );
       store.add({
         id: crypto.randomUUID(),
         productId: product.id,
@@ -160,10 +228,14 @@ export function ProductConfigurator({
         name: product.name,
         quantity,
         selections,
-        unitPrice,
+        unitPrice: priced.unitPrice,
         image: selectedVariant?.exactImage || product.images[0],
         variantId: selectedVariant?.id,
         variantName: selectedVariant?.name,
+        selectedHeight: priced.sizing?.selectedHeight,
+        fixedSizeId: priced.fixedSize?.id,
+        fixedSizeLabel: priced.fixedSize?.label,
+        calculatedSize: priced.sizing,
       });
       fetch('/api/analytics', {
         method: 'POST',
@@ -178,14 +250,151 @@ export function ProductConfigurator({
       if (destination) router.push(destination);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Check your selections');
+      requestAnimationFrame(() => {
+        const target = configuratorRef.current?.querySelector<HTMLElement>(
+          'fieldset, .size-configurator',
+        );
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target?.querySelector<HTMLElement>('input, select, textarea')?.focus({
+          preventScroll: true,
+        });
+      });
     }
   }
   return (
-    <div className="configurator">
+    <div className="configurator" ref={configuratorRef}>
+      {!!product.fixedSizes?.length && (
+        <fieldset className="fixed-size-selector">
+          <legend>Choose your size</legend>
+          <div className="fixed-size-grid">
+            {product.fixedSizes
+              .filter((item) => item.active)
+              .map((item) => {
+                const startingPrice = Math.min(
+                  ...item.prices.map((entry) => entry.sellingPrice),
+                );
+                return (
+                  <label
+                    key={item.id}
+                    className={fixedSizeId === item.id ? 'selected' : ''}
+                  >
+                    <input
+                      type="radio"
+                      name="fixed-size"
+                      value={item.id}
+                      checked={fixedSizeId === item.id}
+                      onChange={() => {
+                        setFixedSizeId(item.id);
+                        setError('');
+                      }}
+                    />
+                    <strong>{item.heightCm} cm</strong>
+                    <b>{item.label}</b>
+                    {item.placementNote && <span>{item.placementNote}</span>}
+                    <small>From {formatMoney(startingPrice)}</small>
+                  </label>
+                );
+              })}
+          </div>
+          <div className="custom-size-help">
+            <div>
+              <b>Need a different size?</b>
+              <p>
+                Looking for a specific size? We can make custom sizes on
+                request.
+              </p>
+            </div>
+            <a
+              className="button secondary"
+              href={customSizeWhatsAppURL.toString()}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Contact us for custom size
+            </a>
+          </div>
+        </fieldset>
+      )}
+      {sizing &&
+        sizing.minimumHeight != null &&
+        sizing.maximumHeight != null &&
+        sizing.increment != null && (
+          <section className="size-configurator" aria-labelledby="size-title">
+            <div className="config-heading">
+              <span>
+                <Ruler /> Choose size
+              </span>
+              <label className="size-number" id="size-title">
+                <input
+                  type="number"
+                  aria-label="Product height value"
+                  min={sizing.minimumHeight}
+                  max={sizing.maximumHeight}
+                  step={sizing.increment}
+                  value={selectedHeight ?? sizing.defaultHeight}
+                  onChange={(event) => {
+                    setSelectedHeight(Number(event.target.value));
+                    setSizeTouched(true);
+                    setError('');
+                  }}
+                />
+                <span>{product.structuredDimensions?.unit || 'cm'} tall</span>
+              </label>
+            </div>
+            <input
+              className="size-slider"
+              type="range"
+              aria-label="Product height"
+              min={sizing.minimumHeight}
+              max={sizing.maximumHeight}
+              step={sizing.increment}
+              value={selectedHeight ?? sizing.defaultHeight}
+              onChange={(event) => {
+                setSelectedHeight(Number(event.target.value));
+                setSizeTouched(true);
+                setError('');
+              }}
+            />
+            <div className="size-scale-labels" aria-hidden="true">
+              <span>
+                {sizing.minimumHeight} {product.structuredDimensions?.unit}
+              </span>
+              <span>
+                {sizing.maximumHeight} {product.structuredDimensions?.unit}
+              </span>
+            </div>
+            <div className="size-readout">
+              <div className="size-outline" aria-hidden="true">
+                <Box />
+              </div>
+              <div>
+                <small>Approximate finished dimensions</small>
+                <strong>
+                  {calculatedSize
+                    ? `${calculatedSize.width} × ${calculatedSize.depth} × ${calculatedSize.selectedHeight} ${product.structuredDimensions?.unit}`
+                    : 'Choose a configured size'}
+                </strong>
+                <span>Width × depth × height · proportions stay exact</span>
+              </div>
+            </div>
+            {calculatedSize?.recommendation && (
+              <div className="size-recommendation" role="status">
+                <CheckCircle2 />
+                <span>
+                  <small>Where this size works</small>
+                  <b>{calculatedSize.recommendation.label}</b>
+                  {calculatedSize.recommendation.description && (
+                    <em>{calculatedSize.recommendation.description}</em>
+                  )}
+                </span>
+              </div>
+            )}
+          </section>
+        )}
       {availableVariants.length > 0 && (
         <fieldset>
           <legend>
-            Finish<sup>*</sup>
+            Choose your finish<sup>*</sup>
           </legend>
           <div className="choice-grid finish-choice-grid">
             {availableVariants.map((variant) => (
@@ -211,10 +420,11 @@ export function ProductConfigurator({
                   {variant.name}
                   <small>
                     {variant.availability === 'available'
-                      ? formatMoney(
-                          variant.sellingPrice ??
-                            product.basePrice + variant.priceAdjustment,
-                        )
+                      ? priceForVariant(variant.id) == null
+                        ? product.fixedSizes?.length && !fixedSizeId
+                          ? 'Choose a size first'
+                          : 'Complete options for price'
+                        : formatMoney(priceForVariant(variant.id)!)
                       : 'Unavailable'}
                   </small>
                 </span>
@@ -336,13 +546,52 @@ export function ProductConfigurator({
       </div>
       {error && <p className="form-error">{error}</p>}
       {!purchasable && (
-        <p className="form-error">This product is temporarily unavailable.</p>
+        <p className="form-error">
+          {product.publishingStatus === 'draft'
+            ? 'Draft preview only — buying is disabled until this product is published.'
+            : 'This product is temporarily unavailable.'}
+        </p>
       )}
       {purchasable && price === null && (
         <p className="price-note">
           Complete the required options to see your final total.
         </p>
       )}
+      <section className="buying-summary" aria-live="polite">
+        <div>
+          <small>Your configuration</small>
+          <b>{product.name}</b>
+        </div>
+        {calculatedSize && (
+          <p>
+            {calculatedSize.selectedHeight} {product.structuredDimensions?.unit}{' '}
+            tall · approx. {calculatedSize.width} × {calculatedSize.depth}{' '}
+            {product.structuredDimensions?.unit} footprint
+          </p>
+        )}
+        {selectedFixedSize && (
+          <p>
+            <b>{selectedFixedSize.label}</b> — {selectedFixedSize.heightCm} cm
+            tall
+          </p>
+        )}
+        {selectedVariant && <p>{selectedVariant.name}</p>}
+        {product.material && (
+          <p className="summary-material">
+            <b>Material</b> {product.material}
+          </p>
+        )}
+        <div className="summary-trust">
+          <span>Made to order</span>
+          <span>
+            {price != null &&
+            launchTotals(price * quantity).deliveryAmount === 0
+              ? 'FREE Bengaluru delivery'
+              : 'Bengaluru delivery calculated in cart'}
+          </span>
+          <span>COD available</span>
+        </div>
+      </section>
       <div className="purchase-row">
         <div>
           <small>{price === null ? 'Starting from' : 'Total'}</small>
@@ -352,11 +601,20 @@ export function ProductConfigurator({
         </div>
         <button
           className="button primary"
-          onClick={() => add('/cart')}
+          onClick={() => add('/checkout')}
           disabled={!purchasable}
         >
-          <ShoppingBag /> Add to cart
+          <ShoppingBag /> Buy now
         </button>
+        <button
+          className="button secondary"
+          onClick={() => add()}
+          disabled={!purchasable}
+        >
+          Add to cart
+        </button>
+      </div>
+      <div className="product-secondary-actions">
         <a
           className="button whatsapp product-whatsapp"
           href={whatsappURL}
@@ -374,19 +632,36 @@ export function ProductConfigurator({
         </a>
       </div>
       <button
-        className="button secondary full"
-        disabled={!purchasable}
-        onClick={() => add('/checkout')}
-      >
-        Buy Now
-      </button>
-      <button
         className="text-action"
         disabled={!purchasable}
         onClick={() => add()}
       >
         Add and keep shopping
       </button>
+      <div className="mobile-purchase-bar" aria-label="Quick purchase">
+        <div>
+          <strong>
+            {formatMoney((price ?? getStartingPrice(product)) * quantity)}
+          </strong>
+          {selectedFixedSize ? (
+            <small>
+              {selectedFixedSize.label} · {selectedVariant?.name || 'Choose finish'}
+            </small>
+          ) : selectedVariant ? (
+            <small>{selectedVariant.name}</small>
+          ) : (
+            <small>Choose required options</small>
+          )}
+        </div>
+        <button
+          className="button primary"
+          type="button"
+          disabled={!purchasable}
+          onClick={() => add()}
+        >
+          Add to cart
+        </button>
+      </div>
     </div>
   );
 }

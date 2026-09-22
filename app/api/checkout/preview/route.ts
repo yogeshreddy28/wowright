@@ -1,6 +1,5 @@
 import { env } from 'cloudflare:workers';
 import { z } from 'zod';
-import { getCustomerFromRequest } from '@/lib/customer-auth';
 import { durableRateLimit } from '@/lib/rate-limit';
 import {
   checkoutItems,
@@ -16,13 +15,16 @@ import {
 export async function POST(request: Request) {
   try {
     sameOrigin(request);
-    const account = await getCustomerFromRequest(request, env.DB);
-    if (!account)
-      throw new CommerceError('Sign in to check your order estimate.', 401);
+    const input = z
+      .object({
+        sessionId: z.string().uuid(),
+        items: checkoutItems,
+      })
+      .parse(await request.json());
     if (
       !(await durableRateLimit(
         env.DB,
-        'checkout-preview:' + account.id,
+        'checkout-preview:' + input.sessionId,
         30,
         60_000,
       ))
@@ -31,9 +33,6 @@ export async function POST(request: Request) {
         'Please wait a minute before checking again.',
         429,
       );
-    const input = z
-      .object({ items: checkoutItems })
-      .parse(await request.json());
     const { verified, totals } = await verifyCheckoutCart(env.DB, input.items);
     const plan = await planOrder(
       env.DB,

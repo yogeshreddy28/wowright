@@ -261,7 +261,11 @@ export async function GET(request: Request) {
     (SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id) variant_count,
     (SELECT COUNT(*) FROM product_images i WHERE i.product_id=p.id) image_count,
     (SELECT '/api/product-images/'||i.id FROM product_images i WHERE i.product_id=p.id AND i.role='main' ORDER BY i.sort_order LIMIT 1) main_image,
-    COALESCE((SELECT MIN(COALESCE(v.selling_price,p.base_price+v.price_adjustment)) FROM product_variants v WHERE v.product_id=p.id AND v.active=1),p.base_price) starting_price
+    CASE WHEN p.resizable=1 THEN
+      COALESCE((SELECT MIN(b.selling_price) FROM product_size_price_bands b WHERE b.product_id=p.id),p.base_price)
+      + COALESCE((SELECT MIN(v.price_adjustment) FROM product_variants v WHERE v.product_id=p.id AND v.active=1 AND v.availability='available'),0)
+    ELSE COALESCE((SELECT MIN(COALESCE(v.selling_price,p.base_price+v.price_adjustment)) FROM product_variants v WHERE v.product_id=p.id AND v.active=1),p.base_price)
+    END starting_price
     FROM products p LEFT JOIN categories c ON c.id=p.category_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY p.updated_at DESC LIMIT 200`)
       .bind(...values)
       .all<Row>();
@@ -299,7 +303,8 @@ export async function persist(
       input.productType ||
       (input.stockMode === 'quote_only' ||
       (!input.basePrice &&
-        !input.variants.some((v) => v.enabled && (v.sellingPrice ?? 0) > 0))
+        !input.variants.some((v) => v.enabled && (v.sellingPrice ?? 0) > 0) &&
+        !(input.resizable && input.sizePriceBands.length))
         ? 'customizable'
         : 'normal'),
   };
@@ -354,6 +359,12 @@ export async function persist(
     product.internalProductionNotes || null,
     product.seoTitle || null,
     product.seoDescription || null,
+    Number(product.resizable),
+    product.minimumHeight ?? null,
+    product.maximumHeight ?? null,
+    product.defaultHeight ?? null,
+    product.sizeIncrement ?? null,
+    product.sizePricingVersion,
     now,
   ];
   if (!id) {
@@ -400,11 +411,61 @@ export async function persist(
   statements.push(
     db
       .prepare(
-        'UPDATE products SET slug=?,sku=?,name=?,short_description=?,description=?,category=?,category_id=?,base_price=?,compare_at_price=?,featured=?,status=?,publishing_status=?,availability=?,stock_mode=?,lead_time=?,dimensions=?,width=?,depth=?,height=?,dimension_unit=?,dimension_display_override=?,material=?,delivery_notes=?,care_instructions=?,commercial_license_status=?,tags=?,estimated_print_minutes=?,filament_grams=?,support_difficulty=?,print_profile_notes=?,internal_production_notes=?,seo_title=?,seo_description=?,updated_at=? WHERE id=?',
+        'UPDATE products SET slug=?,sku=?,name=?,short_description=?,description=?,category=?,category_id=?,base_price=?,compare_at_price=?,featured=?,status=?,publishing_status=?,availability=?,stock_mode=?,lead_time=?,dimensions=?,width=?,depth=?,height=?,dimension_unit=?,dimension_display_override=?,material=?,delivery_notes=?,care_instructions=?,commercial_license_status=?,tags=?,estimated_print_minutes=?,filament_grams=?,support_difficulty=?,print_profile_notes=?,internal_production_notes=?,seo_title=?,seo_description=?,resizable=?,minimum_height=?,maximum_height=?,default_height=?,size_increment=?,size_pricing_version=?,updated_at=? WHERE id=?',
       )
       .bind(...values, productId),
   );
   statements.push(...(await saveRelations(db, productId, sku, product, now)));
+  statements.push(
+    db
+      .prepare('DELETE FROM product_size_price_bands WHERE product_id=?')
+      .bind(productId),
+    db
+      .prepare('DELETE FROM product_size_recommendations WHERE product_id=?')
+      .bind(productId),
+  );
+  product.sizePriceBands.forEach((band, index) =>
+    statements.push(
+      db
+        .prepare(
+          'INSERT INTO product_size_price_bands(id,product_id,minimum_height,maximum_height,selling_price,filament_grams,print_minutes,support_grams,production_cost,sort_order,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        )
+        .bind(
+          band.id || crypto.randomUUID(),
+          productId,
+          band.minimumHeight,
+          band.maximumHeight,
+          band.sellingPrice,
+          band.filamentGrams ?? null,
+          band.printMinutes ?? null,
+          band.supportGrams ?? null,
+          band.productionCost ?? null,
+          index,
+          product.sizePricingVersion,
+          now,
+          now,
+        ),
+    ),
+  );
+  product.sizeRecommendations.forEach((item, index) =>
+    statements.push(
+      db
+        .prepare(
+          'INSERT INTO product_size_recommendations(id,product_id,minimum_height,maximum_height,label,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+        )
+        .bind(
+          item.id || crypto.randomUUID(),
+          productId,
+          item.minimumHeight,
+          item.maximumHeight,
+          item.label,
+          item.description || null,
+          index,
+          now,
+          now,
+        ),
+    ),
+  );
   statements.push(...extraStatements);
   await db.batch(statements);
   return { id: productId, slug, sku };

@@ -102,6 +102,8 @@ export async function POST(
         product,
         selections,
         line.variant_id || undefined,
+        line.fixed_size_id ? undefined : (line.selected_height ?? undefined),
+        line.fixed_size_id || undefined,
       );
       items.push({
         id: crypto.randomUUID(),
@@ -114,6 +116,10 @@ export async function POST(
         image: product.images[0],
         variantId: line.variant_id || undefined,
         variantName: line.variant_name || undefined,
+        selectedHeight: price.sizing?.selectedHeight,
+        fixedSizeId: price.fixedSize?.id,
+        fixedSizeLabel: price.fixedSize?.label,
+        calculatedSize: price.sizing,
       });
     }
     return Response.json({ items });

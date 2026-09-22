@@ -60,3 +60,22 @@ export function trackCommerce(
   }).catch(() => {});
   window.dispatchEvent(new CustomEvent('wow:analytics', { detail }));
 }
+
+export function trackCommerceOnce(
+  name: string,
+  scope: string,
+  metadata: Record<string, unknown> = {},
+  productId?: string,
+) {
+  if (typeof window === 'undefined') return false;
+  const key = `wow_commerce_once:${name}:${scope}`;
+  try {
+    if (window.sessionStorage?.getItem(key)) return false;
+    window.sessionStorage?.setItem(key, '1');
+  } catch {
+    // Storage can be unavailable in privacy modes. Tracking still remains
+    // best-effort and the server continues to deduplicate by event ID.
+  }
+  trackCommerce(name, metadata, productId);
+  return true;
+}

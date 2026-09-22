@@ -5,6 +5,7 @@ import { assertBengaluru, CommerceError, launchTotals } from './launch-rules';
 import { createOrderNumber } from './orders';
 import { planOrder } from './production';
 import { getPaymentConfig } from './delivery';
+import { calculateProductSize, resolveSizePriceBand } from './pricing';
 
 export const assistedOrderSources = [
   'whatsapp',
@@ -49,6 +50,8 @@ export const assistedOrderInput = z.object({
       z.object({
         productId: z.string().min(1).max(100),
         variantId: z.string().min(1).max(100).optional(),
+        selectedHeight: z.coerce.number().positive().finite().optional(),
+        fixedSizeId: z.string().min(1).max(100).optional(),
         quantity: z.coerce.number().int().min(1).max(99),
         unitPriceOverride: z.coerce
           .number()
@@ -91,6 +94,16 @@ type ProductRow = {
   active: number;
   estimated_print_minutes: number | null;
   internal_unit_cost: number | null;
+  width: number | null;
+  depth: number | null;
+  height: number | null;
+  dimension_unit: string;
+  resizable: number;
+  minimum_height: number | null;
+  maximum_height: number | null;
+  default_height: number | null;
+  size_increment: number | null;
+  size_pricing_version: number;
 };
 
 async function authoritativeItems(db: D1Database, input: Input) {
@@ -98,7 +111,8 @@ async function authoritativeItems(db: D1Database, input: Input) {
   for (const supplied of input.items) {
     const product = await db
       .prepare(
-        `SELECT id,name,sku,base_price,product_type,stock_mode,publishing_status,availability,active,estimated_print_minutes,internal_unit_cost
+        `SELECT id,name,sku,base_price,product_type,stock_mode,publishing_status,availability,active,estimated_print_minutes,internal_unit_cost,
+          width,depth,height,dimension_unit,resizable,minimum_height,maximum_height,default_height,size_increment,size_pricing_version
        FROM products WHERE id=?`,
       )
       .bind(supplied.productId)
@@ -142,9 +156,98 @@ async function authoritativeItems(db: D1Database, input: Input) {
         `${variant.name} is not currently available.`,
         409,
       );
-    const cataloguePrice =
-      variant?.selling_price ??
-      product.base_price + (variant?.price_adjustment || 0);
+    const fixedSizes = await db
+      .prepare(
+        'SELECT id,label,height_cm,print_minutes,filament_grams FROM product_fixed_sizes WHERE product_id=? AND active=1 ORDER BY sort_order',
+      )
+      .bind(product.id)
+      .all<{
+        id: string;
+        label: string;
+        height_cm: number;
+        print_minutes: number | null;
+        filament_grams: number | null;
+      }>();
+    const fixedSize = supplied.fixedSizeId
+      ? fixedSizes.results.find((size) => size.id === supplied.fixedSizeId)
+      : undefined;
+    if (
+      (fixedSizes.results.length && !fixedSize) ||
+      (supplied.fixedSizeId && !fixedSize)
+    )
+      throw new CommerceError(
+        `Choose an available fixed size for ${product.name}.`,
+        409,
+      );
+    const fixedPrice =
+      fixedSize && variant
+        ? await db
+            .prepare(
+              'SELECT selling_price FROM product_fixed_size_prices WHERE size_id=? AND variant_id=?',
+            )
+            .bind(fixedSize.id, variant.id)
+            .first<{ selling_price: number }>()
+        : null;
+    if (fixedSize && !fixedPrice)
+      throw new CommerceError(
+        `That size and finish combination is unavailable for ${product.name}.`,
+        409,
+      );
+    const sizeBands = product.resizable
+      ? (
+          await db
+            .prepare(
+              'SELECT id,minimum_height,maximum_height,selling_price,print_minutes,production_cost,version FROM product_size_price_bands WHERE product_id=? ORDER BY sort_order,minimum_height',
+            )
+            .bind(product.id)
+            .all<{
+              id: string;
+              minimum_height: number;
+              maximum_height: number;
+              selling_price: number;
+              print_minutes: number | null;
+              production_cost: number | null;
+              version: number;
+            }>()
+        ).results
+      : [];
+    const sizingProduct = {
+      structuredDimensions: {
+        width: product.width ?? undefined,
+        depth: product.depth ?? undefined,
+        height: product.height ?? undefined,
+        unit: product.dimension_unit || 'cm',
+      },
+      sizing: {
+        enabled: Boolean(product.resizable),
+        minimumHeight: product.minimum_height ?? undefined,
+        maximumHeight: product.maximum_height ?? undefined,
+        defaultHeight: product.default_height ?? undefined,
+        increment: product.size_increment ?? undefined,
+        pricingVersion: product.size_pricing_version || 1,
+        priceBands: sizeBands.map((band) => ({
+          id: band.id,
+          minimumHeight: band.minimum_height,
+          maximumHeight: band.maximum_height,
+          sellingPrice: band.selling_price,
+          version: band.version,
+        })),
+        recommendations: [],
+      },
+    };
+    const sizing = calculateProductSize(sizingProduct, supplied.selectedHeight);
+    const sizeBand = sizing
+      ? sizeBands.find((band) => band.id === sizing.pricingBandId)
+      : undefined;
+    const cataloguePrice = fixedSize
+      ? fixedPrice!.selling_price
+      : sizing
+        ? resolveSizePriceBand(
+            sizingProduct.sizing!.priceBands,
+            sizing.selectedHeight,
+          )!.sellingPrice + (variant?.price_adjustment || 0)
+        : (variant?.selling_price ??
+          product.base_price + (variant?.price_adjustment || 0));
     if (!Number.isSafeInteger(cataloguePrice) || cataloguePrice <= 0)
       throw new CommerceError(
         `${product.name} does not have a valid selling price.`,
@@ -165,6 +268,9 @@ async function authoritativeItems(db: D1Database, input: Input) {
       discount: supplied.discount,
       lineTotal: unitPrice * supplied.quantity - supplied.discount,
       overridden: unitPrice !== cataloguePrice || supplied.discount > 0,
+      sizing,
+      sizeBand,
+      fixedSize,
     });
   }
   return rows;
@@ -276,10 +382,15 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
       .run();
     const savedItems = await db
       .prepare(
-        'SELECT product_name name,selected_finish finish,quantity FROM order_items WHERE order_id=? ORDER BY created_at',
+        "SELECT product_name name,selected_finish finish,quantity,CASE WHEN selected_height IS NOT NULL THEN CAST(selected_height AS TEXT)||' '||COALESCE(size_dimension_unit,'cm') ELSE NULL END size FROM order_items WHERE order_id=? ORDER BY created_at",
       )
       .bind(duplicate.id)
-      .all<{ name: string; finish: string | null; quantity: number }>();
+      .all<{
+        name: string;
+        finish: string | null;
+        quantity: number;
+        size: string | null;
+      }>();
     return {
       ...duplicate,
       customerName: duplicate.customer_name,
@@ -380,7 +491,10 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
           items.map((item) => ({
             id: item.id,
             quantity: item.quantity,
-            estimated_print_minutes: item.product.estimated_print_minutes,
+            estimated_print_minutes:
+              item.fixedSize?.print_minutes ??
+              item.sizeBand?.print_minutes ??
+              item.product.estimated_print_minutes,
           })),
         )
       : null;
@@ -489,7 +603,7 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
     statements.push(
       db
         .prepare(
-          'INSERT INTO order_items (id,order_id,product_id,product_name,product_sku,variant_id,variant_name,selected_finish,quantity,unit_price,line_total,estimated_print_minutes,unit_cost,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO order_items (id,order_id,product_id,product_name,product_sku,variant_id,variant_name,selected_finish,selected_height,calculated_width,calculated_depth,size_scale,size_price_band_id,size_pricing_version,size_dimension_unit,quantity,unit_price,line_total,estimated_print_minutes,unit_cost,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         )
         .bind(
           item.id,
@@ -500,15 +614,53 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
           item.variant?.id || null,
           item.variant?.name || null,
           item.variant?.name || null,
+          item.sizing?.selectedHeight ?? null,
+          item.sizing?.width ?? null,
+          item.sizing?.depth ?? null,
+          item.sizing?.scale ?? null,
+          item.sizing?.pricingBandId ?? null,
+          item.sizing?.pricingVersion ?? null,
+          item.sizing?.dimensionUnit ?? null,
           item.quantity,
           item.unitPrice,
           item.lineTotal,
-          item.product.estimated_print_minutes,
-          item.product.internal_unit_cost,
+          item.fixedSize?.print_minutes ??
+            item.sizeBand?.print_minutes ??
+            item.product.estimated_print_minutes,
+          item.sizeBand?.production_cost ?? item.product.internal_unit_cost,
           now,
           now,
         ),
     );
+  for (const item of items)
+    if (item.fixedSize)
+      statements.push(
+        db
+          .prepare(
+            'UPDATE order_items SET fixed_size_id=?,fixed_size_label=?,selected_height=?,size_dimension_unit=?,filament_grams=? WHERE id=?',
+          )
+          .bind(
+            item.fixedSize.id,
+            item.fixedSize.label,
+            item.fixedSize.height_cm,
+            'cm',
+            item.fixedSize.filament_grams,
+            item.id,
+          ),
+        db
+          .prepare(
+            'INSERT INTO order_item_customizations (id,order_item_id,option_key,option_name,value,price_adjustment,created_at,updated_at) VALUES (?,?,?,?,?,0,?,?)',
+          )
+          .bind(
+            crypto.randomUUID(),
+            item.id,
+            'fixed_size',
+            'Size',
+            `${item.fixedSize.label} — ${item.fixedSize.height_cm} cm`,
+            now,
+            now,
+          ),
+      );
   for (const allocation of plan?.allocations || [])
     statements.push(
       db
@@ -596,6 +748,11 @@ export async function createAssistedOrder(db: D1Database, raw: unknown) {
       name: item.product.name,
       finish: item.variant?.name || null,
       quantity: item.quantity,
+      size: item.sizing
+        ? `${item.sizing.selectedHeight} ${item.sizing.dimensionUnit}`
+        : item.fixedSize
+          ? `${item.fixedSize.label} — ${item.fixedSize.height_cm} cm`
+          : null,
     })),
     duplicate: false,
   };
@@ -608,7 +765,12 @@ export function assistedWhatsAppMessage(
     status: string;
     payment_method: string;
     estimatedDeliveryDate?: string | null;
-    items: Array<{ name: string; finish: string | null; quantity: number }>;
+    items: Array<{
+      name: string;
+      finish: string | null;
+      quantity: number;
+      size?: string | null;
+    }>;
   },
   trackingUrl: string,
 ) {
@@ -619,7 +781,7 @@ export function assistedWhatsAppMessage(
       : 'Your WOW RIGHT order has been saved. UPI payment is pending.',
     ...order.items.map(
       (item) =>
-        `${item.name}${item.finish ? ` — ${item.finish}` : ''}${item.quantity > 1 ? ` × ${item.quantity}` : ''}`,
+        `${item.name}${item.size ? ` — ${item.size} tall` : ''}${item.finish ? ` — ${item.finish}` : ''}${item.quantity > 1 ? ` × ${item.quantity}` : ''}`,
     ),
     `₹${order.total.toLocaleString('en-IN')} • ${order.payment_method === 'COD' ? 'Cash on Delivery' : confirmed ? 'UPI received' : 'UPI payment pending'}`,
     `Order: #${order.order_number}`,

@@ -13,7 +13,8 @@ declare global {
 export function AnalyticsProvider() {
   const path = usePathname(),
     [consent, setConsent] = useState<string | null | undefined>(undefined),
-    [pixel, setPixel] = useState('');
+    [pixel, setPixel] = useState(''),
+    [privacyOpen, setPrivacyOpen] = useState(false);
   useEffect(() => {
     // Some privacy-focused browsers disable Web Storage entirely.  Consent UI
     // must still render in that case instead of leaving analytics hydration
@@ -131,6 +132,17 @@ export function AnalyticsProvider() {
           {
             content_ids: d.productId ? [d.productId] : undefined,
             content_type: d.productId ? 'product' : undefined,
+            content_name: d.metadata?.productName || undefined,
+            contents: d.productId
+              ? [
+                  {
+                    id: d.productId,
+                    quantity: Number(d.metadata?.quantity) || 1,
+                    item_price: Number(d.metadata?.price) || undefined,
+                  },
+                ]
+              : undefined,
+            variant: d.metadata?.variant || undefined,
             currency: 'INR',
             value: Number.isFinite(value) ? value : undefined,
           },
@@ -160,16 +172,28 @@ export function AnalyticsProvider() {
     if (value !== 'granted') window.fbq?.('consent', 'revoke');
     if (value !== 'granted') window.__wowAnalyticsQueue = [];
   }
+  if (!privacyOpen) {
+    return (
+      <button
+        className="consent-trigger"
+        type="button"
+        onClick={() => setPrivacyOpen(true)}
+      >
+        Privacy
+      </button>
+    );
+  }
   return (
     <aside className="consent-banner" aria-label="Privacy choices">
       <p>
-        Allow optional Meta measurement to help us understand which ads work?
-        Essential shopping functions work either way.{' '}
-        <Link href="/privacy">Privacy</Link>
+        Allow optional ad measurement? Shopping works either way.{' '}
+        <Link href="/privacy">Details</Link>
       </p>
-      <button onClick={() => choose('denied')}>Essential only</button>
-      <button onClick={() => choose('granted')}>
-        Allow optional measurement
+      <button type="button" onClick={() => choose('denied')}>
+        No thanks
+      </button>
+      <button type="button" onClick={() => choose('granted')}>
+        Allow
       </button>
     </aside>
   );

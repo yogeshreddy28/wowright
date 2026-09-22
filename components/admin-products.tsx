@@ -46,6 +46,7 @@ const tabs = [
   'Pricing & Variants',
   'Images',
   'Product Details',
+  'Sizing',
   'Production',
   'SEO',
   'Publishing',
@@ -73,6 +74,27 @@ const blank = {
   height: undefined as number | undefined,
   dimensionUnit: 'cm',
   dimensionDisplayOverride: '',
+  resizable: false,
+  minimumHeight: undefined as number | undefined,
+  maximumHeight: undefined as number | undefined,
+  defaultHeight: undefined as number | undefined,
+  sizeIncrement: undefined as number | undefined,
+  sizePricingVersion: 1,
+  sizePriceBands: [] as Array<{
+    id?: string;
+    minimumHeight: number | undefined;
+    maximumHeight: number | undefined;
+    sellingPrice: number | undefined;
+    filamentGrams?: number;
+    printMinutes?: number;
+  }>,
+  sizeRecommendations: [] as Array<{
+    id?: string;
+    minimumHeight: number | undefined;
+    maximumHeight: number | undefined;
+    label: string;
+    description?: string;
+  }>,
   deliveryNotes: '',
   careInstructions: '',
   commercialLicenseStatus: 'unchecked',
@@ -251,6 +273,27 @@ export function AdminProducts({ data, reload }: Props) {
       height: p.height ?? undefined,
       dimensionUnit: p.dimension_unit || 'cm',
       dimensionDisplayOverride: p.dimension_display_override || '',
+      resizable: Boolean(p.resizable),
+      minimumHeight: p.minimum_height ?? undefined,
+      maximumHeight: p.maximum_height ?? undefined,
+      defaultHeight: p.default_height ?? undefined,
+      sizeIncrement: p.size_increment ?? undefined,
+      sizePricingVersion: p.size_pricing_version || 1,
+      sizePriceBands: (p.sizePriceBands || []).map((band: any) => ({
+        id: band.id,
+        minimumHeight: band.minimum_height,
+        maximumHeight: band.maximum_height,
+        sellingPrice: band.selling_price,
+        filamentGrams: band.filament_grams ?? undefined,
+        printMinutes: band.print_minutes ?? undefined,
+      })),
+      sizeRecommendations: (p.sizeRecommendations || []).map((item: any) => ({
+        id: item.id,
+        minimumHeight: item.minimum_height,
+        maximumHeight: item.maximum_height,
+        label: item.label,
+        description: item.description || '',
+      })),
       deliveryNotes: p.delivery_notes || '',
       careInstructions: p.care_instructions || '',
       commercialLicenseStatus: p.commercial_license_status || 'unchecked',
@@ -1022,6 +1065,324 @@ export function AdminProducts({ data, reload }: Props) {
                   </fieldset>
                 </div>
               )}
+              {tab === 'Sizing' && (
+                <div className="product-sizing-admin">
+                  <label className="toggle-row wide">
+                    <span>
+                      <b>Customer-selectable size</b>
+                      <small>
+                        Keep off until original dimensions and truthful prices
+                        are configured.
+                      </small>
+                    </span>
+                    <input
+                      aria-label="Resizable product"
+                      type="checkbox"
+                      checked={editor.resizable}
+                      onChange={(event) =>
+                        set('resizable', event.target.checked)
+                      }
+                    />
+                  </label>
+                  {!editor.resizable ? (
+                    <p className="ux-help">
+                      Customers see the normal dimensions and finish selector.
+                      Existing products remain unchanged.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="admin-warning">
+                        <b>Original proportions are authoritative</b>
+                        <p>
+                          Set width, depth and height in Product Details. The
+                          storefront scales all three together and never lets a
+                          customer distort the model.
+                        </p>
+                      </div>
+                      <div className="field-grid sizing-basics">
+                        <TextField
+                          label={`Minimum height (${editor.dimensionUnit})`}
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={editor.minimumHeight}
+                          onChange={(value: number) =>
+                            set('minimumHeight', value)
+                          }
+                        />
+                        <TextField
+                          label={`Maximum height (${editor.dimensionUnit})`}
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={editor.maximumHeight}
+                          onChange={(value: number) =>
+                            set('maximumHeight', value)
+                          }
+                        />
+                        <TextField
+                          label={`Default height (${editor.dimensionUnit})`}
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={editor.defaultHeight}
+                          onChange={(value: number) =>
+                            set('defaultHeight', value)
+                          }
+                        />
+                        <TextField
+                          label={`Size increment (${editor.dimensionUnit})`}
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={editor.sizeIncrement}
+                          onChange={(value: number) =>
+                            set('sizeIncrement', value)
+                          }
+                        />
+                        <TextField
+                          label="Pricing version"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={editor.sizePricingVersion}
+                          onChange={(value: number) =>
+                            set('sizePricingVersion', value)
+                          }
+                        />
+                      </div>
+                      <section className="sizing-admin-section">
+                        <div>
+                          <h3>Size price bands</h3>
+                          <p>
+                            Every selectable height must belong to exactly one
+                            band. Finish adjustments are added afterward.
+                          </p>
+                        </div>
+                        {editor.sizePriceBands.map(
+                          (band: any, index: number) => (
+                            <div
+                              className="sizing-admin-row"
+                              key={band.id || index}
+                            >
+                              <TextField
+                                label="From"
+                                type="number"
+                                step="0.1"
+                                value={band.minimumHeight}
+                                onChange={(value: number) =>
+                                  set(
+                                    'sizePriceBands',
+                                    editor.sizePriceBands.map(
+                                      (item: any, i: number) =>
+                                        i === index
+                                          ? { ...item, minimumHeight: value }
+                                          : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <TextField
+                                label="To"
+                                type="number"
+                                step="0.1"
+                                value={band.maximumHeight}
+                                onChange={(value: number) =>
+                                  set(
+                                    'sizePriceBands',
+                                    editor.sizePriceBands.map(
+                                      (item: any, i: number) =>
+                                        i === index
+                                          ? { ...item, maximumHeight: value }
+                                          : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <TextField
+                                label="Selling price ₹"
+                                type="number"
+                                min="1"
+                                value={band.sellingPrice}
+                                onChange={(value: number) =>
+                                  set(
+                                    'sizePriceBands',
+                                    editor.sizePriceBands.map(
+                                      (item: any, i: number) =>
+                                        i === index
+                                          ? { ...item, sellingPrice: value }
+                                          : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <TextField
+                                label="Print minutes (internal)"
+                                type="number"
+                                min="0"
+                                value={band.printMinutes}
+                                onChange={(value: number) =>
+                                  set(
+                                    'sizePriceBands',
+                                    editor.sizePriceBands.map(
+                                      (item: any, i: number) =>
+                                        i === index
+                                          ? { ...item, printMinutes: value }
+                                          : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="icon-button"
+                                aria-label={`Remove price band ${index + 1}`}
+                                onClick={() =>
+                                  set(
+                                    'sizePriceBands',
+                                    editor.sizePriceBands.filter(
+                                      (_: any, i: number) => i !== index,
+                                    ),
+                                  )
+                                }
+                              >
+                                <Trash2 />
+                              </button>
+                            </div>
+                          ),
+                        )}
+                        <button
+                          type="button"
+                          className="button secondary"
+                          onClick={() =>
+                            set('sizePriceBands', [
+                              ...editor.sizePriceBands,
+                              {
+                                minimumHeight: editor.minimumHeight,
+                                maximumHeight: editor.maximumHeight,
+                                sellingPrice: undefined,
+                              },
+                            ])
+                          }
+                        >
+                          <Plus /> Add price band
+                        </button>
+                      </section>
+                      <section className="sizing-admin-section">
+                        <div>
+                          <h3>Where each size works</h3>
+                          <p>Short recommendations shown below the slider.</p>
+                        </div>
+                        {editor.sizeRecommendations.map(
+                          (item: any, index: number) => (
+                            <div
+                              className="sizing-admin-row recommendation"
+                              key={item.id || index}
+                            >
+                              <TextField
+                                label="From"
+                                type="number"
+                                step="0.1"
+                                value={item.minimumHeight}
+                                onChange={(value: number) =>
+                                  set(
+                                    'sizeRecommendations',
+                                    editor.sizeRecommendations.map(
+                                      (row: any, i: number) =>
+                                        i === index
+                                          ? { ...row, minimumHeight: value }
+                                          : row,
+                                    ),
+                                  )
+                                }
+                              />
+                              <TextField
+                                label="To"
+                                type="number"
+                                step="0.1"
+                                value={item.maximumHeight}
+                                onChange={(value: number) =>
+                                  set(
+                                    'sizeRecommendations',
+                                    editor.sizeRecommendations.map(
+                                      (row: any, i: number) =>
+                                        i === index
+                                          ? { ...row, maximumHeight: value }
+                                          : row,
+                                    ),
+                                  )
+                                }
+                              />
+                              <TextField
+                                label="Recommendation"
+                                value={item.label}
+                                onChange={(value: string) =>
+                                  set(
+                                    'sizeRecommendations',
+                                    editor.sizeRecommendations.map(
+                                      (row: any, i: number) =>
+                                        i === index
+                                          ? { ...row, label: value }
+                                          : row,
+                                    ),
+                                  )
+                                }
+                              />
+                              <TextField
+                                label="Short explanation"
+                                value={item.description}
+                                onChange={(value: string) =>
+                                  set(
+                                    'sizeRecommendations',
+                                    editor.sizeRecommendations.map(
+                                      (row: any, i: number) =>
+                                        i === index
+                                          ? { ...row, description: value }
+                                          : row,
+                                    ),
+                                  )
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="icon-button"
+                                aria-label={`Remove recommendation ${index + 1}`}
+                                onClick={() =>
+                                  set(
+                                    'sizeRecommendations',
+                                    editor.sizeRecommendations.filter(
+                                      (_: any, i: number) => i !== index,
+                                    ),
+                                  )
+                                }
+                              >
+                                <Trash2 />
+                              </button>
+                            </div>
+                          ),
+                        )}
+                        <button
+                          type="button"
+                          className="button secondary"
+                          onClick={() =>
+                            set('sizeRecommendations', [
+                              ...editor.sizeRecommendations,
+                              {
+                                minimumHeight: editor.minimumHeight,
+                                maximumHeight: editor.maximumHeight,
+                                label: '',
+                                description: '',
+                              },
+                            ])
+                          }
+                        >
+                          <Plus /> Add recommendation
+                        </button>
+                      </section>
+                    </>
+                  )}
+                </div>
+              )}
               {tab === 'Production' && (
                 <div className="field-grid admin-only-section">
                   <p className="wide admin-only-label">
@@ -1517,7 +1878,9 @@ function Pricing({ editor, set, finishes }: any) {
         <div>
           <h3>Finishes / variants</h3>
           <p>
-            Select reusable finishes, then set the exact price for this product.
+            {editor.resizable
+              ? 'Select reusable finishes and set any price adjustment on top of the trusted size-band price.'
+              : 'Select reusable finishes, then set the exact price for this product.'}
           </p>
         </div>
         <button
@@ -1528,7 +1891,9 @@ function Pricing({ editor, set, finishes }: any) {
               {
                 name: '',
                 finishId: '',
-                sellingPrice: editor.basePrice || undefined,
+                sellingPrice: editor.resizable
+                  ? undefined
+                  : editor.basePrice || undefined,
                 originalPrice: undefined,
                 priceAdjustment: 0,
                 enabled: true,
@@ -1567,20 +1932,31 @@ function Pricing({ editor, set, finishes }: any) {
               value={v.name}
               onChange={(x: string) => update(i, 'name', x)}
             />
-            <TextField
-              label="Selling price"
-              type="number"
-              min="0"
-              value={v.sellingPrice}
-              onChange={(x: number) => update(i, 'sellingPrice', x)}
-            />
-            <TextField
-              label="Original price"
-              type="number"
-              min="0"
-              value={v.originalPrice}
-              onChange={(x: number) => update(i, 'originalPrice', x)}
-            />
+            {editor.resizable ? (
+              <TextField
+                label="Price adjustment"
+                type="number"
+                value={v.priceAdjustment}
+                onChange={(x: number) => update(i, 'priceAdjustment', x)}
+              />
+            ) : (
+              <>
+                <TextField
+                  label="Selling price"
+                  type="number"
+                  min="0"
+                  value={v.sellingPrice}
+                  onChange={(x: number) => update(i, 'sellingPrice', x)}
+                />
+                <TextField
+                  label="Original price"
+                  type="number"
+                  min="0"
+                  value={v.originalPrice}
+                  onChange={(x: number) => update(i, 'originalPrice', x)}
+                />
+              </>
+            )}
             <label>
               Availability
               <select

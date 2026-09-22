@@ -334,6 +334,31 @@ export function ProductionAdmin({
                       {i.selected_finish || 'No finish selected'} ·{' '}
                       {durationLabel(i.estimated_print_minutes * i.quantity)}
                     </p>
+                    {i.selected_height != null && (
+                      <p className="ux-size-snapshot">
+                        {i.fixed_size_label ? (
+                          <>
+                            <b>
+                              SIZE: {i.fixed_size_label} — {i.selected_height}{' '}
+                              cm
+                            </b>
+                            <span>PLA: {i.filament_grams}g</span>
+                          </>
+                        ) : (
+                          <>
+                            <b>
+                              CUSTOM SIZE: {i.selected_height}{' '}
+                              {i.size_dimension_unit || 'cm'}
+                            </b>
+                            <span>
+                              {i.calculated_width} × {i.calculated_depth}{' '}
+                              {i.size_dimension_unit || 'cm'} · Scale:{' '}
+                              {Math.round(Number(i.size_scale) * 10_000) / 100}%
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    )}
                     <span className="ux-item-state">
                       {(
                         {
@@ -1020,8 +1045,9 @@ export function DeliveryAdmin({
           </div>
           <span className="ux-chip">
             {
-              collections.filter((p) => p.settlement_status === 'pending' && p.method !== 'cash')
-                .length
+              collections.filter(
+                (p) => p.settlement_status === 'pending' && p.method !== 'cash',
+              ).length
             }{' '}
             awaiting receipt
           </span>
@@ -1031,16 +1057,60 @@ export function DeliveryAdmin({
             <article key={person.personId}>
               <h3>{person.name}</h3>
               <dl>
-                <div><dt>Cash collected</dt><dd>{formatMoney(person.collected)}</dd></div>
-                <div><dt>Handed over</dt><dd>{formatMoney(person.handedOver)}</dd></div>
-                <div className="cash-held"><dt>Cash currently held</dt><dd>{formatMoney(person.held)}</dd></div>
-                <div><dt>UPI recorded separately</dt><dd>{formatMoney(person.upiCollected || 0)}</dd></div>
+                <div>
+                  <dt>Cash collected</dt>
+                  <dd>{formatMoney(person.collected)}</dd>
+                </div>
+                <div>
+                  <dt>Handed over</dt>
+                  <dd>{formatMoney(person.handedOver)}</dd>
+                </div>
+                <div className="cash-held">
+                  <dt>Cash currently held</dt>
+                  <dd>{formatMoney(person.held)}</dd>
+                </div>
+                <div>
+                  <dt>UPI recorded separately</dt>
+                  <dd>{formatMoney(person.upiCollected || 0)}</dd>
+                </div>
               </dl>
               {person.held > 0 && (
-                <form onSubmit={(event) => { event.preventDefault(); const values = new FormData(event.currentTarget); void send({ action: 'cash_settlement', personId: person.personId, amount: Number(values.get('amount')), note: values.get('note') }, event.currentTarget); }}>
-                  <label>Handover amount (₹)<input name="amount" type="number" min="1" max={person.held} required /></label>
-                  <label>Note <input name="note" maxLength={300} placeholder="Optional receipt note" /></label>
-                  <button className="button primary" disabled={busy}>Record cash handover</button>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const values = new FormData(event.currentTarget);
+                    void send(
+                      {
+                        action: 'cash_settlement',
+                        personId: person.personId,
+                        amount: Number(values.get('amount')),
+                        note: values.get('note'),
+                      },
+                      event.currentTarget,
+                    );
+                  }}
+                >
+                  <label>
+                    Handover amount (₹)
+                    <input
+                      name="amount"
+                      type="number"
+                      min="1"
+                      max={person.held}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Note{' '}
+                    <input
+                      name="note"
+                      maxLength={300}
+                      placeholder="Optional receipt note"
+                    />
+                  </label>
+                  <button className="button primary" disabled={busy}>
+                    Record cash handover
+                  </button>
                 </form>
               )}
             </article>
@@ -1048,14 +1118,24 @@ export function DeliveryAdmin({
         </div>
         <details className="ux-secondary-details">
           <summary>Cash handover audit history</summary>
-          {(data.settlementHistory || []).map((item: Row) => <p key={item.id}><b>{item.person_name}</b> · {formatMoney(item.amount)} · {new Date(item.created_at).toLocaleString('en-IN')}{item.note ? ` · ${item.note}` : ''}</p>)}
-          {!data.settlementHistory?.length && <p>No cash handovers recorded yet.</p>}
+          {(data.settlementHistory || []).map((item: Row) => (
+            <p key={item.id}>
+              <b>{item.person_name}</b> · {formatMoney(item.amount)} ·{' '}
+              {new Date(item.created_at).toLocaleString('en-IN')}
+              {item.note ? ` · ${item.note}` : ''}
+            </p>
+          ))}
+          {!data.settlementHistory?.length && (
+            <p>No cash handovers recorded yet.</p>
+          )}
         </details>
-        {!collections.some((p) => p.settlement_status === 'pending' && p.method !== 'cash') && (
-          <EmptyWork title="No collections waiting for owner receipt" />
-        )}
+        {!collections.some(
+          (p) => p.settlement_status === 'pending' && p.method !== 'cash',
+        ) && <EmptyWork title="No collections waiting for owner receipt" />}
         {collections
-          .filter((p) => p.settlement_status === 'pending' && p.method !== 'cash')
+          .filter(
+            (p) => p.settlement_status === 'pending' && p.method !== 'cash',
+          )
           .map((p) => (
             <div className="ux-collection-row" key={p.id}>
               <div>

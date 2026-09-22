@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   createCustomerAuthToken,
   createCustomerSession,
+  canClaimGuestCustomer,
   hashCustomerPassword,
   normalizeEmail,
 } from '@/lib/customer-auth';
@@ -56,10 +57,17 @@ export async function POST(request: Request) {
         { error: 'An account already exists for these details.' },
         { status: 409 },
       );
+    const matchingGuestEmail =
+      existing && normalizeEmail(existing.email || '') === email;
+    const provenGuestCheckout =
+      existing &&
+      existing.mobile === mobile &&
+      !existing.password_hash &&
+      (await canClaimGuestCustomer(request, env.DB, existing.id));
     if (
       existing &&
       (existing.mobile !== mobile ||
-        normalizeEmail(existing.email || '') !== email)
+        (!matchingGuestEmail && !provenGuestCheckout))
     )
       return Response.json(
         {

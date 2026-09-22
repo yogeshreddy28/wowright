@@ -237,6 +237,28 @@ export async function canAccessOrder(
       .first(),
   );
 }
+
+export async function canClaimGuestCustomer(
+  request: Request,
+  db: D1Database,
+  customerId: string,
+) {
+  const token = cookie(request, 'wow_order_access');
+  if (!token) return false;
+  const tokenHash = await sha256(token);
+  return Boolean(
+    await db
+      .prepare(
+        `SELECT oat.id
+         FROM order_access_tokens oat
+         JOIN orders o ON o.id=oat.order_id
+         WHERE oat.token_hash=? AND oat.expires_at>? AND o.customer_id=?
+         LIMIT 1`,
+      )
+      .bind(tokenHash, new Date().toISOString(), customerId)
+      .first(),
+  );
+}
 export const clearCustomerSessionCookie = `wow_customer_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
 
 export async function revokeCustomerSession(request: Request, db: D1Database) {

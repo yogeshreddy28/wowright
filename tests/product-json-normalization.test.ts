@@ -43,6 +43,30 @@ const existingState = (): ProductJsonState => ({
     featured: true,
     tags: ['decor', 'gift'],
     relatedProductIds: ['related-one'],
+    resizable: true,
+    depth: 8,
+    minimumHeight: 8,
+    maximumHeight: 20,
+    defaultHeight: 10,
+    sizeIncrement: 1,
+    sizePricingVersion: 2,
+    sizePriceBands: [
+      {
+        id: 'size-band-one',
+        minimumHeight: 8,
+        maximumHeight: 20,
+        sellingPrice: 899,
+        printMinutes: 120,
+      },
+    ],
+    sizeRecommendations: [
+      {
+        id: 'size-rec-one',
+        minimumHeight: 8,
+        maximumHeight: 20,
+        label: 'Display space',
+      },
+    ],
     variants: [
       {
         id: 'variant-black',
@@ -115,6 +139,36 @@ describe('schema-driven Product JSON', () => {
     const result = normalizeProductJson({ description: 'Changed' }, state);
     expect(result.input.variants).toEqual(state.input.variants);
     expect(result.input.variants[0].exactImageIds).toEqual(['gallery-black']);
+  });
+
+  it('preserves omitted sizing rules and canonicalizes explicit sizing edits', () => {
+    const state = existingState();
+    const preserved = normalizeProductJson({ name: 'Renamed' }, state);
+    expect(preserved.input.sizePriceBands).toEqual(state.input.sizePriceBands);
+    expect(preserved.input.sizeRecommendations).toEqual(
+      state.input.sizeRecommendations,
+    );
+    const changed = normalizeProductJson(
+      {
+        sizeRecommendations: [
+          {
+            minimumHeight: 8,
+            maximumHeight: 20,
+            label: 'Shelf or display',
+          },
+        ],
+      },
+      state,
+    );
+    expect(changed.document.sizeRecommendations).toEqual([
+      {
+        id: null,
+        minimumHeight: 8,
+        maximumHeight: 20,
+        label: 'Shelf or display',
+        description: '',
+      },
+    ]);
   });
 
   it('preserves uploaded media when omitted or altered in JSON', () => {

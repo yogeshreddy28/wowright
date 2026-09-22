@@ -43,6 +43,10 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
     tagResult,
     reviewResult,
     settingResult,
+    sizePriceResult,
+    sizeRecommendationResult,
+    fixedSizeResult,
+    fixedPriceResult,
   ] = await env.DB.batch([
     env.DB.prepare(
       `SELECT * FROM product_options WHERE product_id IN (${marks}) ORDER BY sort_order`,
@@ -71,6 +75,18 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
     env.DB.prepare(
       "SELECT key,value FROM settings WHERE key IN ('productDefaultMaterial','productDefaultLeadTime','productDefaultDeliveryNotes','productDefaultCareInstructions','productMadeToOrderNotice')",
     ),
+    env.DB.prepare(
+      `SELECT * FROM product_size_price_bands WHERE product_id IN (${marks}) ORDER BY sort_order,minimum_height`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT * FROM product_size_recommendations WHERE product_id IN (${marks}) ORDER BY sort_order,minimum_height`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT * FROM product_fixed_sizes WHERE product_id IN (${marks}) ORDER BY sort_order,height_cm`,
+    ).bind(...ids),
+    env.DB.prepare(
+      `SELECT p.size_id,p.variant_id,p.selling_price FROM product_fixed_size_prices p JOIN product_fixed_sizes s ON s.id=p.size_id WHERE s.product_id IN (${marks})`,
+    ).bind(...ids),
   ]);
   const defaults = Object.fromEntries(
     (settingResult.results as Row[]).map((setting) => {
@@ -129,7 +145,7 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
       productType:
         row.product_type === 'customizable' ||
         row.stock_mode === 'quote_only' ||
-        Number(row.base_price) <= 0
+        (Number(row.base_price) <= 0 && !bool(row.resizable))
           ? ('customizable' as const)
           : ('normal' as const),
       stockQuantity:
@@ -185,6 +201,55 @@ async function hydrate(rows: Row[]): Promise<Product[]> {
         height: row.height == null ? undefined : Number(row.height),
         unit: String(row.dimension_unit || 'cm'),
       },
+      sizing: {
+        enabled: bool(row.resizable),
+        minimumHeight:
+          row.minimum_height == null ? undefined : Number(row.minimum_height),
+        maximumHeight:
+          row.maximum_height == null ? undefined : Number(row.maximum_height),
+        defaultHeight:
+          row.default_height == null ? undefined : Number(row.default_height),
+        increment:
+          row.size_increment == null ? undefined : Number(row.size_increment),
+        pricingVersion: Number(row.size_pricing_version || 1),
+        priceBands: (sizePriceResult.results as Row[])
+          .filter((item) => item.product_id === row.id)
+          .map((item) => ({
+            id: String(item.id),
+            minimumHeight: Number(item.minimum_height),
+            maximumHeight: Number(item.maximum_height),
+            sellingPrice: Number(item.selling_price),
+            version: Number(item.version || row.size_pricing_version || 1),
+          })),
+        recommendations: (sizeRecommendationResult.results as Row[])
+          .filter((item) => item.product_id === row.id)
+          .map((item) => ({
+            id: String(item.id),
+            minimumHeight: Number(item.minimum_height),
+            maximumHeight: Number(item.maximum_height),
+            label: String(item.label),
+            description: item.description
+              ? String(item.description)
+              : undefined,
+          })),
+      },
+      fixedSizes: (fixedSizeResult.results as Row[])
+        .filter((item) => item.product_id === row.id)
+        .map((item) => ({
+          id: String(item.id),
+          label: String(item.label),
+          heightCm: Number(item.height_cm),
+          placementNote: item.placement_note
+            ? String(item.placement_note)
+            : undefined,
+          active: bool(item.active),
+          prices: (fixedPriceResult.results as Row[])
+            .filter((price) => price.size_id === item.id)
+            .map((price) => ({
+              variantId: String(price.variant_id),
+              sellingPrice: Number(price.selling_price),
+            })),
+        })),
       variants: (variantResult.results as Row[])
         .filter((variant) => variant.product_id === row.id)
         .map((variant) => {
@@ -256,6 +321,15 @@ export async function getCatalogProductBySlug(slug: string) {
   } catch {
     return undefined;
   }
+}
+/** For authenticated Admin draft preview only; never call from public catalogue queries. */
+export async function getCatalogDraftPreviewBySlug(slug: string) {
+  const row = await env.DB.prepare(
+    'SELECT * FROM products WHERE slug=? LIMIT 1',
+  )
+    .bind(slug)
+    .first<Row>();
+  return row ? (await hydrate([row]))[0] : undefined;
 }
 export async function getCatalogProductById(id: string) {
   try {

@@ -57,6 +57,7 @@ export async function GET(request: Request) {
   const like = `%${q}%`;
   const products = await env.DB.prepare(
     `SELECT p.id,p.name,p.sku,p.base_price,p.product_type,p.stock_mode,p.lead_time,
+      p.resizable,p.minimum_height,p.maximum_height,p.default_height,p.size_increment,p.dimension_unit,
       (SELECT '/api/product-images/'||pi.id FROM product_images pi WHERE pi.product_id=p.id ORDER BY CASE pi.role WHEN 'main' THEN 0 ELSE 1 END,pi.sort_order LIMIT 1) image
      FROM products p WHERE p.active=1 AND p.publishing_status='published' AND p.availability='available'
        AND (?='' OR p.name LIKE ? OR COALESCE(p.sku,'') LIKE ?)
@@ -66,22 +67,45 @@ export async function GET(request: Request) {
     .all<Record<string, unknown>>();
   const productIds = products.results.map((row) => String(row.id));
   let variants: Record<string, unknown>[] = [];
+  let sizeBands: Record<string, unknown>[] = [];
+  let fixedSizes: Record<string, unknown>[] = [];
+  let fixedPrices: Record<string, unknown>[] = [];
   if (productIds.length) {
     const marks = productIds.map(() => '?').join(',');
-    variants = (
-      await env.DB.prepare(
+    const results = await env.DB.batch([
+      env.DB.prepare(
         `SELECT v.id,v.product_id,COALESCE(f.name,v.name) name,v.sku,v.selling_price,v.price_adjustment,v.availability
        FROM product_variants v LEFT JOIN global_finishes f ON f.id=v.finish_id
        WHERE v.product_id IN (${marks}) AND v.active=1 AND v.availability='available' ORDER BY v.sort_order,v.created_at`,
-      )
-        .bind(...productIds)
-        .all<Record<string, unknown>>()
-    ).results;
+      ).bind(...productIds),
+      env.DB.prepare(
+        `SELECT product_id,id,minimum_height,maximum_height,selling_price FROM product_size_price_bands WHERE product_id IN (${marks}) ORDER BY sort_order,minimum_height`,
+      ).bind(...productIds),
+      env.DB.prepare(
+        `SELECT product_id,id,label,height_cm FROM product_fixed_sizes WHERE product_id IN (${marks}) AND active=1 ORDER BY sort_order`,
+      ).bind(...productIds),
+      env.DB.prepare(
+        `SELECT s.product_id,p.size_id,p.variant_id,p.selling_price FROM product_fixed_size_prices p JOIN product_fixed_sizes s ON s.id=p.size_id WHERE s.product_id IN (${marks})`,
+      ).bind(...productIds),
+    ]);
+    variants = results[0].results as Record<string, unknown>[];
+    sizeBands = results[1].results as Record<string, unknown>[];
+    fixedSizes = results[2].results as Record<string, unknown>[];
+    fixedPrices = results[3].results as Record<string, unknown>[];
   }
   return Response.json({
     products: products.results.map((product) => ({
       ...product,
       variants: variants.filter((variant) => variant.product_id === product.id),
+      sizePriceBands: sizeBands.filter(
+        (band) => band.product_id === product.id,
+      ),
+      fixedSizes: fixedSizes
+        .filter((size) => size.product_id === product.id)
+        .map((size) => ({
+          ...size,
+          prices: fixedPrices.filter((price) => price.size_id === size.id),
+        })),
     })),
   });
 }
@@ -109,6 +133,10 @@ export async function POST(request: Request) {
           unitPrice: item.unitPrice,
           discount: item.discount,
           lineTotal: item.lineTotal,
+          selectedHeight: item.sizing?.selectedHeight || null,
+          calculatedWidth: item.sizing?.width || null,
+          calculatedDepth: item.sizing?.depth || null,
+          dimensionUnit: item.sizing?.dimensionUnit || null,
         })),
         subtotal: result.subtotal,
         deliveryAmount: result.deliveryAmount,

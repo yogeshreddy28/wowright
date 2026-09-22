@@ -59,6 +59,7 @@ const schema = z.object({
     'shop_filter_used',
     'finish_selected',
     'finish_image_viewed',
+    'size_changed',
   ]),
   sessionId: z.string().max(100).optional(),
   path: z.string().max(300).optional(),
@@ -91,6 +92,8 @@ export async function POST(r: Request) {
       return Response.json({ ok: false }, { status: 403 });
     const allowed = [
       'quantity',
+      'productName',
+      'variant',
       'value',
       'total',
       'price',
@@ -106,6 +109,9 @@ export async function POST(r: Request) {
       'placement',
       'filter',
       'hasProductImage',
+      'selectedHeight',
+      'recommendation',
+      'pricingVersion',
       'utm_source',
       'utm_medium',
       'utm_campaign',
@@ -170,6 +176,29 @@ export async function POST(r: Request) {
           currency: 'INR',
           content_ids: d.productId ? [d.productId] : undefined,
           content_type: d.productId ? 'product' : undefined,
+          content_name:
+            typeof metadata.productName === 'string'
+              ? metadata.productName
+              : undefined,
+          contents: d.productId
+            ? [
+                {
+                  id: d.productId,
+                  quantity:
+                    typeof metadata.quantity === 'number'
+                      ? metadata.quantity
+                      : 1,
+                  item_price:
+                    typeof (metadata.price ?? metadata.value) === 'number'
+                      ? (metadata.price ?? metadata.value)
+                      : undefined,
+                },
+              ]
+            : undefined,
+          variant:
+            typeof metadata.variant === 'string'
+              ? metadata.variant
+              : undefined,
           value:
             typeof (metadata.value ?? metadata.total ?? metadata.price) ===
             'number'

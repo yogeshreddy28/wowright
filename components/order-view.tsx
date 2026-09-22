@@ -10,7 +10,10 @@ import { ReviewForm } from './reviews';
 import { useStore } from './store-provider';
 import { useRouter } from 'next/navigation';
 import { ProductImage } from './product-image';
-import { deliveredOrderReviewPrompt, type ReviewPromptItem } from '@/lib/services/review-eligibility';
+import {
+  deliveredOrderReviewPrompt,
+  type ReviewPromptItem,
+} from '@/lib/services/review-eligibility';
 type Data = {
   order: {
     order_number: string;
@@ -30,8 +33,15 @@ type Data = {
     id: string;
     product_name: string;
     variant_name?: string;
+    selected_finish?: string;
     quantity: number;
     line_total: number;
+    selected_height?: number;
+    fixed_size_label?: string;
+    calculated_width?: number;
+    calculated_depth?: number;
+    size_scale?: number;
+    size_dimension_unit?: string;
     image?: string;
     reviewed?: number;
   }[];
@@ -44,38 +54,51 @@ export function OrderView({ id }: { id: string }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false),
     [actionError, setActionError] = useState('');
-  const [otp, setOtp] = useState<{ code: string; expiresAt: string } | null>(null);
-  const [reviewPrompt, setReviewPrompt] = useState<(ReviewPromptItem & { image?: string }) | null>(null);
+  const [otp, setOtp] = useState<{ code: string; expiresAt: string } | null>(
+    null,
+  );
+  const [reviewPrompt, setReviewPrompt] = useState<
+    (ReviewPromptItem & { image?: string }) | null
+  >(null);
   const previousStatus = useRef<string | undefined>(undefined);
   const orderStatus = data?.order.status;
   const loadOrder = useCallback(async () => {
     try {
-      const response = await fetch(`/api/orders/${encodeURIComponent(id)}`, { cache: 'no-store' });
+      const response = await fetch(`/api/orders/${encodeURIComponent(id)}`, {
+        cache: 'no-store',
+      });
       if (!response.ok)
         throw new Error(
           response.status === 403
             ? 'Sign in with the account used for this order.'
             : 'We could not find that order.',
         );
-      const body = await response.json() as Data;
-      const eligible = body.items.filter((item) => !item.reviewed).map((item) => ({
-        item_id: item.id,
-        product_name: item.product_name,
-        order_number: body.order.order_number,
-        image: item.image,
-      }));
+      const body = (await response.json()) as Data;
+      const eligible = body.items
+        .filter((item) => !item.reviewed)
+        .map((item) => ({
+          item_id: item.id,
+          product_name: item.product_name,
+          order_number: body.order.order_number,
+          image: item.image,
+        }));
       const prompt = deliveredOrderReviewPrompt({
         status: body.order.status,
         previousStatus: previousStatus.current,
         items: eligible,
-        dismissedAt: (itemId) => Number(localStorage.getItem(`wow_review_dismissed_${itemId}`) || 0),
+        dismissedAt: (itemId) =>
+          Number(localStorage.getItem(`wow_review_dismissed_${itemId}`) || 0),
       });
       setData(body);
       if (prompt) setReviewPrompt((current) => current || prompt);
       previousStatus.current = body.order.status;
       setError('');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'We could not load that order.');
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'We could not load that order.',
+      );
     }
   }, [id]);
   useEffect(() => {
@@ -85,8 +108,22 @@ export function OrderView({ id }: { id: string }) {
   }, [loadOrder]);
   useEffect(() => {
     if (orderStatus !== 'out_for_delivery') return;
-    const loadOtp = () => fetch(`/api/orders/${encodeURIComponent(id)}/delivery-otp`, { cache: 'no-store' }).then(async (r) => r.ok ? await r.json() as { otp?: { code: string; expiresAt: string } | null } : null).then((body) => setOtp(body?.otp || null)).catch(() => {});
-    void loadOtp(); const timer = window.setInterval(loadOtp, 15_000); return () => clearInterval(timer);
+    const loadOtp = () =>
+      fetch(`/api/orders/${encodeURIComponent(id)}/delivery-otp`, {
+        cache: 'no-store',
+      })
+        .then(async (r) =>
+          r.ok
+            ? ((await r.json()) as {
+                otp?: { code: string; expiresAt: string } | null;
+              })
+            : null,
+        )
+        .then((body) => setOtp(body?.otp || null))
+        .catch(() => {});
+    void loadOtp();
+    const timer = window.setInterval(loadOtp, 15_000);
+    return () => clearInterval(timer);
   }, [orderStatus, id]);
   async function act(action: 'cancel' | 'reorder') {
     if (busy) return;
@@ -144,8 +181,16 @@ export function OrderView({ id }: { id: string }) {
     <AppShell>
       {reviewPrompt && (
         <div className="review-prompt-backdrop">
-          <section className="review-prompt" role="dialog" aria-modal="true" aria-labelledby="order-review-prompt-title">
-            <ProductImage src={reviewPrompt.image} alt={reviewPrompt.product_name} />
+          <section
+            className="review-prompt"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="order-review-prompt-title"
+          >
+            <ProductImage
+              src={reviewPrompt.image}
+              alt={reviewPrompt.product_name}
+            />
             <p className="eyebrow">Delivered · verified purchase</p>
             <h2 id="order-review-prompt-title">How was your order?</h2>
             <p>{reviewPrompt.product_name}</p>
@@ -157,10 +202,19 @@ export function OrderView({ id }: { id: string }) {
                 void loadOrder();
               }}
             />
-            <button type="button" className="button secondary" onClick={() => {
-              localStorage.setItem(`wow_review_dismissed_${reviewPrompt.item_id}`, String(Date.now()));
-              setReviewPrompt(null);
-            }}>Not now</button>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => {
+                localStorage.setItem(
+                  `wow_review_dismissed_${reviewPrompt.item_id}`,
+                  String(Date.now()),
+                );
+                setReviewPrompt(null);
+              }}
+            >
+              Not now
+            </button>
           </section>
         </div>
       )}
@@ -204,7 +258,24 @@ export function OrderView({ id }: { id: string }) {
           </div>
         )}
         <OrderFlow status={order.status} customer />
-        {otp && <section className="delivery-otp-customer" aria-live="polite"><p className="eyebrow">Delivery confirmation</p><h2>Your delivery verification code</h2><strong>{otp.code}</strong><p>Share this code only after you have checked and accepted the package and the required payment is complete.</p><small>Expires at {new Date(otp.expiresAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</small></section>}
+        {otp && (
+          <section className="delivery-otp-customer" aria-live="polite">
+            <p className="eyebrow">Delivery confirmation</p>
+            <h2>Your delivery verification code</h2>
+            <strong>{otp.code}</strong>
+            <p>
+              Share this code only after you have checked and accepted the
+              package and the required payment is complete.
+            </p>
+            <small>
+              Expires at{' '}
+              {new Date(otp.expiresAt).toLocaleTimeString('en-IN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </small>
+          </section>
+        )}
         <div className="saved-order">
           <h2>Order details</h2>
           {data.items.map((item) => (
@@ -212,15 +283,39 @@ export function OrderView({ id }: { id: string }) {
               <ProductImage src={item.image} alt={item.product_name} />
               <span>
                 {item.product_name} × {item.quantity}
-                {item.variant_name && (
+                {(item.selected_finish || item.variant_name) && (
                   <small className="ux-order-finish">
-                    Finish: {item.variant_name}
+                    Finish: {item.selected_finish || item.variant_name}
+                  </small>
+                )}
+                {item.selected_height != null && (
+                  <small className="size-snapshot">
+                    {item.fixed_size_label
+                      ? `Size: ${item.fixed_size_label} — `
+                      : 'Custom size: '}
+                    {item.selected_height} {item.size_dimension_unit || 'cm'}{' '}
+                    tall
+                    {item.calculated_width != null &&
+                      item.calculated_depth != null && (
+                        <>
+                          {' '}
+                          · {item.calculated_width} × {item.calculated_depth}{' '}
+                          {item.size_dimension_unit || 'cm'} footprint
+                        </>
+                      )}
                   </small>
                 )}
               </span>
               <b>{formatMoney(item.line_total)}</b>
-              {order.status === 'delivered' && !item.reviewed && <ReviewForm itemId={item.id} onSubmitted={() => void loadOrder()} />}
-              {order.status === 'delivered' && Boolean(item.reviewed) && <small className="review-complete">Review submitted</small>}
+              {order.status === 'delivered' && !item.reviewed && (
+                <ReviewForm
+                  itemId={item.id}
+                  onSubmitted={() => void loadOrder()}
+                />
+              )}
+              {order.status === 'delivered' && Boolean(item.reviewed) && (
+                <small className="review-complete">Review submitted</small>
+              )}
             </div>
           ))}
           <hr />

@@ -69,6 +69,25 @@ export const productVariantInput = z.object({
   sortOrder: z.number().int().nonnegative().default(0),
 });
 
+export const productSizePriceBandInput = z.object({
+  id: z.string().optional(),
+  minimumHeight: z.coerce.number().positive(),
+  maximumHeight: z.coerce.number().positive(),
+  sellingPrice: z.coerce.number().int().positive(),
+  filamentGrams: optionalNumber,
+  printMinutes: optionalInteger,
+  supportGrams: optionalNumber,
+  productionCost: optionalInteger,
+});
+
+export const productSizeRecommendationInput = z.object({
+  id: z.string().optional(),
+  minimumHeight: z.coerce.number().positive(),
+  maximumHeight: z.coerce.number().positive(),
+  label: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(160).optional(),
+});
+
 export const productAdminInput = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1).max(160),
@@ -102,6 +121,17 @@ export const productAdminInput = z.object({
   height: optionalNumber,
   dimensionUnit: z.enum(['mm', 'cm', 'in']).default('cm'),
   dimensionDisplayOverride: z.string().trim().max(300).optional(),
+  resizable: z.boolean().default(false),
+  minimumHeight: optionalNumber,
+  maximumHeight: optionalNumber,
+  defaultHeight: optionalNumber,
+  sizeIncrement: optionalNumber,
+  sizePricingVersion: z.coerce.number().int().positive().default(1),
+  sizePriceBands: z.array(productSizePriceBandInput).max(100).default([]),
+  sizeRecommendations: z
+    .array(productSizeRecommendationInput)
+    .max(30)
+    .default([]),
   deliveryNotes: z.string().trim().max(1000).optional(),
   careInstructions: z.string().trim().max(2000).optional(),
   commercialLicenseStatus: z.enum(LICENSE_STATUSES).default('unchecked'),
@@ -253,6 +283,29 @@ export function canonicalProductJson(state: ProductJsonState) {
     height: input.height ?? null,
     dimensionUnit: input.dimensionUnit,
     dimensionDisplayOverride: input.dimensionDisplayOverride || '',
+    resizable: input.resizable,
+    minimumHeight: input.minimumHeight ?? null,
+    maximumHeight: input.maximumHeight ?? null,
+    defaultHeight: input.defaultHeight ?? null,
+    sizeIncrement: input.sizeIncrement ?? null,
+    sizePricingVersion: input.sizePricingVersion,
+    sizePriceBands: input.sizePriceBands.map((band) => ({
+      id: band.id || null,
+      minimumHeight: band.minimumHeight,
+      maximumHeight: band.maximumHeight,
+      sellingPrice: band.sellingPrice,
+      filamentGrams: band.filamentGrams ?? null,
+      printMinutes: band.printMinutes ?? null,
+      supportGrams: band.supportGrams ?? null,
+      productionCost: band.productionCost ?? null,
+    })),
+    sizeRecommendations: input.sizeRecommendations.map((item) => ({
+      id: item.id || null,
+      minimumHeight: item.minimumHeight,
+      maximumHeight: item.maximumHeight,
+      label: item.label,
+      description: item.description || '',
+    })),
     deliveryNotes: input.deliveryNotes || '',
     careInstructions: input.careInstructions || '',
     commercialLicenseStatus: input.commercialLicenseStatus,
@@ -501,7 +554,8 @@ export function validateProductForPublish(
   if (
     input.stockMode !== 'quote_only' &&
     !input.basePrice &&
-    !input.variants.some((v) => v.enabled && v.sellingPrice != null)
+    !input.variants.some((v) => v.enabled && v.sellingPrice != null) &&
+    !(input.resizable && input.sizePriceBands.length)
   )
     errors.push('Add a selling price or an enabled finish price.');
   if (!imageCount) errors.push('Upload a main image before publishing.');
@@ -513,9 +567,18 @@ export function validateProductForPublish(
   if (input.commercialLicenseStatus !== 'commercial_verified')
     errors.push('Commercial use must be verified before publishing.');
   for (const variant of input.variants) {
+    const invalidResizablePrice =
+      input.resizable &&
+      input.sizePriceBands.some(
+        (band) => band.sellingPrice + variant.priceAdjustment <= 0,
+      );
     const price =
       variant.sellingPrice ?? input.basePrice + variant.priceAdjustment;
-    if (variant.enabled && input.stockMode !== 'quote_only' && price <= 0)
+    if (
+      variant.enabled &&
+      input.stockMode !== 'quote_only' &&
+      (input.resizable ? invalidResizablePrice : price <= 0)
+    )
       errors.push(`${variant.name}: enter a selling price greater than zero.`);
     if (
       variant.originalPrice != null &&
@@ -532,6 +595,81 @@ export function validateProductForPublish(
     input.compareAtPrice < input.basePrice
   )
     errors.push('Original price cannot be lower than selling price.');
+  if (input.resizable) {
+    const originalDimensions = [input.width, input.depth, input.height];
+    if (originalDimensions.some((value) => value == null || value <= 0))
+      errors.push(
+        'Resizable products require positive original width, depth and height.',
+      );
+    if (
+      input.minimumHeight == null ||
+      input.maximumHeight == null ||
+      input.defaultHeight == null ||
+      input.sizeIncrement == null ||
+      input.sizeIncrement <= 0 ||
+      input.minimumHeight >= input.maximumHeight ||
+      input.defaultHeight < input.minimumHeight ||
+      input.defaultHeight > input.maximumHeight ||
+      Math.abs(
+        (input.defaultHeight - input.minimumHeight) / input.sizeIncrement -
+          Math.round(
+            (input.defaultHeight - input.minimumHeight) / input.sizeIncrement,
+          ),
+      ) > 0.0001
+    )
+      errors.push('Add a valid minimum, maximum, default and size increment.');
+    for (const [index, band] of input.sizePriceBands.entries()) {
+      if (band.minimumHeight > band.maximumHeight)
+        errors.push(`Size price band ${index + 1} has an invalid range.`);
+      if (band.sellingPrice <= 0)
+        errors.push(`Size price band ${index + 1} needs a valid price.`);
+    }
+    if (
+      input.minimumHeight != null &&
+      input.maximumHeight != null &&
+      input.sizeIncrement != null &&
+      input.sizeIncrement > 0
+    ) {
+      for (
+        let value = input.minimumHeight;
+        value <= input.maximumHeight + 0.0001;
+        value += input.sizeIncrement
+      ) {
+        const matches = input.sizePriceBands.filter(
+          (band) =>
+            value >= band.minimumHeight - 0.0001 &&
+            value <= band.maximumHeight + 0.0001,
+        );
+        if (matches.length !== 1) {
+          errors.push(
+            `Size ${Math.round(value * 10) / 10} ${input.dimensionUnit} must match exactly one price band.`,
+          );
+          break;
+        }
+      }
+    }
+    for (const [index, item] of input.sizeRecommendations.entries()) {
+      if (
+        item.minimumHeight > item.maximumHeight ||
+        (input.minimumHeight != null &&
+          item.minimumHeight < input.minimumHeight) ||
+        (input.maximumHeight != null &&
+          item.maximumHeight > input.maximumHeight)
+      )
+        errors.push(`Size recommendation ${index + 1} has an invalid range.`);
+      if (
+        input.sizeRecommendations.some(
+          (other, otherIndex) =>
+            otherIndex < index &&
+            item.minimumHeight <= other.maximumHeight &&
+            item.maximumHeight >= other.minimumHeight,
+        )
+      )
+        errors.push(
+          `Size recommendation ${index + 1} overlaps another recommendation.`,
+        );
+    }
+  }
   return errors;
 }
 
@@ -597,6 +735,8 @@ export function productInputFromRow(
   row: Record<string, unknown>,
   variants: Record<string, unknown>[],
   relatedProductIds: string[] = [],
+  sizePriceBands: Record<string, unknown>[] = [],
+  sizeRecommendations: Record<string, unknown>[] = [],
 ) {
   const fields: Record<string, string> = {
     name: 'name',
@@ -615,6 +755,11 @@ export function productInputFromRow(
     height: 'height',
     dimensionUnit: 'dimension_unit',
     dimensionDisplayOverride: 'dimension_display_override',
+    minimumHeight: 'minimum_height',
+    maximumHeight: 'maximum_height',
+    defaultHeight: 'default_height',
+    sizeIncrement: 'size_increment',
+    sizePricingVersion: 'size_pricing_version',
     deliveryNotes: 'delivery_notes',
     careInstructions: 'care_instructions',
     commercialLicenseStatus: 'commercial_license_status',
@@ -640,6 +785,7 @@ export function productInputFromRow(
     slugManual: true,
     skuManual: true,
     featured: Boolean(row.featured),
+    resizable: Boolean(row.resizable),
     tags: JSON.parse(String(row.tags || '[]')),
     relatedProductIds,
     variants: variants.map((v) => ({
@@ -658,6 +804,23 @@ export function productInputFromRow(
       availability: v.availability,
       sortOrder: v.sort_order,
     })),
+    sizePriceBands: sizePriceBands.map((band) => ({
+      id: band.id,
+      minimumHeight: band.minimum_height,
+      maximumHeight: band.maximum_height,
+      sellingPrice: band.selling_price,
+      filamentGrams: band.filament_grams ?? undefined,
+      printMinutes: band.print_minutes ?? undefined,
+      supportGrams: band.support_grams ?? undefined,
+      productionCost: band.production_cost ?? undefined,
+    })),
+    sizeRecommendations: sizeRecommendations.map((item) => ({
+      id: item.id,
+      minimumHeight: item.minimum_height,
+      maximumHeight: item.maximum_height,
+      label: item.label,
+      description: item.description || undefined,
+    })),
   };
 }
 
@@ -666,7 +829,15 @@ export async function loadProductJsonState(
   db: D1Database,
   productId: string,
 ): Promise<ProductJsonState | null> {
-  const [product, variants, images, tags, related] = await db.batch([
+  const [
+    product,
+    variants,
+    images,
+    tags,
+    related,
+    sizePriceBands,
+    sizeRecommendations,
+  ] = await db.batch([
     db.prepare('SELECT * FROM products WHERE id=?').bind(productId),
     db
       .prepare(
@@ -688,6 +859,16 @@ export async function loadProductJsonState(
         'SELECT related_product_id FROM related_products WHERE product_id=? ORDER BY sort_order',
       )
       .bind(productId),
+    db
+      .prepare(
+        'SELECT * FROM product_size_price_bands WHERE product_id=? ORDER BY sort_order,minimum_height',
+      )
+      .bind(productId),
+    db
+      .prepare(
+        'SELECT * FROM product_size_recommendations WHERE product_id=? ORDER BY sort_order,minimum_height',
+      )
+      .bind(productId),
   ]);
   const row = product.results[0] as Record<string, unknown> | undefined;
   if (!row) return null;
@@ -705,6 +886,8 @@ export async function loadProductJsonState(
       },
       variants.results as Record<string, unknown>[],
       relatedProductIds,
+      sizePriceBands.results as Record<string, unknown>[],
+      sizeRecommendations.results as Record<string, unknown>[],
     ),
   );
   const safeImages = (images.results as Record<string, unknown>[]).map(

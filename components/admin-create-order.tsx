@@ -25,6 +25,24 @@ type Product = {
   product_type: string;
   stock_mode: string;
   lead_time: string;
+  resizable: number;
+  minimum_height?: number;
+  maximum_height?: number;
+  default_height?: number;
+  size_increment?: number;
+  dimension_unit?: string;
+  sizePriceBands: Array<{
+    id: string;
+    minimum_height: number;
+    maximum_height: number;
+    selling_price: number;
+  }>;
+  fixedSizes: Array<{
+    id: string;
+    label: string;
+    height_cm: number;
+    prices: Array<{ variant_id: string; selling_price: number }>;
+  }>;
   variants: Array<{
     id: string;
     name: string;
@@ -37,6 +55,8 @@ type Line = {
   key: string;
   productId: string;
   variantId: string;
+  selectedHeight: string;
+  fixedSizeId: string;
   quantity: number;
   unitPriceOverride: string;
   discount: string;
@@ -45,6 +65,8 @@ const blankLine = (): Line => ({
   key: crypto.randomUUID(),
   productId: '',
   variantId: '',
+  selectedHeight: '',
+  fixedSizeId: '',
   quantity: 1,
   unitPriceOverride: '',
   discount: '0',
@@ -154,6 +176,10 @@ function AdminCreateOrder() {
       items: lines.map((line) => ({
         productId: line.productId,
         variantId: line.variantId || undefined,
+        selectedHeight: line.selectedHeight
+          ? Number(line.selectedHeight)
+          : undefined,
+        fixedSizeId: line.fixedSizeId || undefined,
         quantity: Number(line.quantity),
         unitPriceOverride: line.unitPriceOverride
           ? Number(line.unitPriceOverride)
@@ -567,6 +593,10 @@ function AdminCreateOrder() {
                               next?.variants.length === 1
                                 ? next.variants[0]!.id
                                 : '',
+                            selectedHeight: next?.resizable
+                              ? String(next.default_height || '')
+                              : '',
+                            fixedSizeId: '',
                             unitPriceOverride: '',
                           });
                         }}
@@ -608,6 +638,47 @@ function AdminCreateOrder() {
                       <label>
                         Finish
                         <input value="Standard" disabled />
+                      </label>
+                    )}
+                    {Boolean(product?.resizable) && (
+                      <label>
+                        Height ({product?.dimension_unit || 'cm'})
+                        <input
+                          type="number"
+                          required
+                          min={product?.minimum_height}
+                          max={product?.maximum_height}
+                          step={product?.size_increment || 1}
+                          value={line.selectedHeight}
+                          onChange={(event) =>
+                            updateLine(line.key, {
+                              selectedHeight: event.target.value,
+                              unitPriceOverride: '',
+                            })
+                          }
+                        />
+                      </label>
+                    )}
+                    {!!product?.fixedSizes?.length && (
+                      <label>
+                        Fixed size
+                        <select
+                          required
+                          value={line.fixedSizeId}
+                          onChange={(event) =>
+                            updateLine(line.key, {
+                              fixedSizeId: event.target.value,
+                              unitPriceOverride: '',
+                            })
+                          }
+                        >
+                          <option value="">Choose size</option>
+                          {product.fixedSizes.map((size) => (
+                            <option key={size.id} value={size.id}>
+                              {size.label} — {size.height_cm} cm
+                            </option>
+                          ))}
+                        </select>
                       </label>
                     )}
                     <label>
@@ -792,6 +863,9 @@ function AdminCreateOrder() {
                 <span>
                   {item.name}
                   <small>
+                    {item.selectedHeight
+                      ? `${item.selectedHeight} ${item.dimensionUnit} · `
+                      : ''}
                     {item.variant || 'Standard'} · Qty {item.quantity}
                   </small>
                 </span>

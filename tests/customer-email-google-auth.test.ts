@@ -17,7 +17,10 @@ import { POST as resetPassword } from '@/app/api/account/reset-password/route';
 import { POST as forgotPassword } from '@/app/api/account/forgot-password/route';
 import { GET as googleCallback } from '@/app/api/account/google/callback/route';
 import { POST as googleComplete } from '@/app/api/account/google/complete/route';
-import { createCustomerAuthToken } from '@/lib/customer-auth';
+import {
+  createCustomerAuthToken,
+  createOrderAccess,
+} from '@/lib/customer-auth';
 import { sendVerificationEmail } from '@/lib/services/customer-email';
 import { createGoogleAuthorization } from '@/lib/services/google-auth';
 
@@ -45,6 +48,38 @@ function post(path: string, body: unknown, cookie = '') {
 }
 
 describe('customer email authentication', () => {
+  it('lets the same browser securely activate an email-less guest checkout customer', async () => {
+    database.sqlite.exec(
+      "INSERT INTO customers(id,name,mobile,auth_method,account_claim_pending) VALUES('guest-checkout','Guest buyer','919000000098','guest',1); INSERT INTO customer_addresses(id,customer_id,line1,locality,city,state,pin_code) VALUES('guest-address','guest-checkout','One Road','Jayanagar','Bengaluru','Karnataka','560041'); INSERT INTO orders(id,order_number,idempotency_key,customer_id,address_id,subtotal,delivery_amount,total) VALUES('guest-order','WR-GUEST','guest-key','guest-checkout','guest-address',599,49,648)",
+    );
+    const accessCookie = (
+      await createOrderAccess(database.db, 'guest-order')
+    ).split(';')[0];
+    const response = await register(
+      post(
+        '/api/account/register',
+        {
+          name: 'Guest buyer',
+          phone: '9000000098',
+          email: 'new-guest@example.com',
+          password: 'secure-guest-password',
+        },
+        accessCookie,
+      ),
+    );
+    expect(response.status).toBe(200);
+    expect(
+      database.sqlite
+        .prepare(
+          "SELECT email_normalized,account_claim_pending FROM customers WHERE id='guest-checkout'",
+        )
+        .get(),
+    ).toEqual({
+      email_normalized: 'new-guest@example.com',
+      account_claim_pending: 1,
+    });
+  });
+
   it('securely claims an assisted-order customer only after matching email verification', async () => {
     database.sqlite.exec(
       "INSERT INTO customers(id,name,mobile,email,email_normalized,auth_method) VALUES('assisted','Guest buyer','919000000099','guest@example.com','guest@example.com','legacy')",

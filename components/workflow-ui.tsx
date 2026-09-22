@@ -150,9 +150,8 @@ export function ShoppingSteps({
 }) {
   const steps = [
     ['cart', 'Cart', '/cart'],
-    ['account', 'Account', '/account?returnTo=checkout'],
     ['checkout', 'Checkout', '/checkout'],
-    ['saved', 'Order saved', ''],
+    ['saved', 'Order confirmed', ''],
   ];
   const selected = steps.findIndex(([id]) => id === current);
   return (

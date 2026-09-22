@@ -19,7 +19,7 @@ import {
 } from '@/lib/services/delivery';
 import { emitCompanionEvent } from '@/lib/companion/events';
 import { launchTotals } from '@/lib/services/launch-rules';
-import { trackCommerce } from '@/lib/analytics-client';
+import { trackCommerce, trackCommerceOnce } from '@/lib/analytics-client';
 import { AddressLocationPicker } from './address-location-picker';
 import { ProductImage } from './product-image';
 import { AddressLabelSelector } from './address-label-selector';
@@ -76,19 +76,29 @@ export function CheckoutForm() {
   );
   const previewKey = JSON.stringify(
     store.items.map(
-      ({ productId, variantId, quantity, unitPrice, selections }) => ({
+      ({
         productId,
         variantId,
         quantity,
         unitPrice,
         selections,
+        selectedHeight,
+        fixedSizeId,
+      }) => ({
+        productId,
+        variantId,
+        quantity,
+        unitPrice,
+        selections,
+        selectedHeight,
+        fixedSizeId,
       }),
     ),
   );
   const currentPreview = preview?.key === previewKey ? preview : null;
   const totals = currentPreview?.totals || cartTotals;
   useEffect(() => {
-    if (!authenticated || previewKey === '[]') return;
+    if (!store.hydrated || !store.sessionId || previewKey === '[]') return;
     const controller = new AbortController();
     setPreview(null);
     const timer = setTimeout(async () => {
@@ -96,7 +106,10 @@ export function CheckoutForm() {
         const response = await fetch('/api/checkout/preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: JSON.parse(previewKey) }),
+          body: JSON.stringify({
+            sessionId: store.sessionId,
+            items: JSON.parse(previewKey),
+          }),
           signal: controller.signal,
         });
         const body = (await response.json()) as {
@@ -129,16 +142,29 @@ export function CheckoutForm() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [authenticated, previewKey, previewAttempt]);
+  }, [store.hydrated, store.sessionId, previewKey, previewAttempt]);
   useEffect(() => {
-    trackCommerce('InitiateCheckout', {
-      cartSize: store.items.length,
-      value: cartTotals.total,
-    });
-    emitCompanionEvent('CHECKOUT_STARTED', {
-      metadata: { cartSize: store.items.length },
-    });
-  }, [cartTotals.total, store.items.length, store.sessionId]);
+    if (!store.hydrated || !store.sessionId || !store.items.length) return;
+    const started = trackCommerceOnce(
+      'InitiateCheckout',
+      `${store.sessionId}:${previewKey}`,
+      {
+        cartSize: store.items.length,
+        value: cartTotals.total,
+        quantity: store.items.reduce((sum, item) => sum + item.quantity, 0),
+      },
+    );
+    if (started)
+      emitCompanionEvent('CHECKOUT_STARTED', {
+        metadata: { cartSize: store.items.length },
+      });
+  }, [
+    cartTotals.total,
+    previewKey,
+    store.hydrated,
+    store.items,
+    store.sessionId,
+  ]);
   useEffect(() => {
     fetch('/api/account/addresses')
       .then(async (response) =>
@@ -165,15 +191,8 @@ export function CheckoutForm() {
       )
       .then((body) => {
         setAuthenticated(Boolean(body));
-        if (!body) {
-          router.replace('/account?returnTo=checkout');
-          return;
-        }
+        if (!body) return;
         setAccount(body.customer);
-        if (!body.customer.email || !body.customer.email_verified_at) {
-          router.replace('/account?returnTo=checkout&verifyEmail=1');
-          return;
-        }
         if (!formRef.current) return;
         const values = {
           name: body.customer.name,
@@ -233,17 +252,22 @@ export function CheckoutForm() {
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (loading) return;
-    if (!authenticated) {
-      router.push('/account?returnTo=checkout');
-      return;
-    }
     setLoading(true);
     setError('');
     const form = new FormData(e.currentTarget);
     const customer = Object.fromEntries(form.entries());
-    const idem =
-      sessionStorage.getItem('wow_checkout_key') || crypto.randomUUID();
-    sessionStorage.setItem('wow_checkout_key', idem);
+    let idem = crypto.randomUUID();
+    try {
+      idem = sessionStorage.getItem('wow_checkout_key') || idem;
+      sessionStorage.setItem('wow_checkout_key', idem);
+    } catch {}
+    let analyticsConsent = false;
+    let campaign: Record<string, unknown> = {};
+    try {
+      analyticsConsent =
+        localStorage.getItem('wow_analytics_consent') === 'granted';
+      campaign = JSON.parse(sessionStorage.getItem('wow_campaign') || '{}');
+    } catch {}
     try {
       const r = await fetch('/api/checkout', {
         method: 'POST',
@@ -256,12 +280,12 @@ export function CheckoutForm() {
           items: store.items,
           customer: { ...customer, addressId: selectedAddressId || undefined },
           paymentMethod,
-          analyticsConsent:
-            localStorage.getItem('wow_analytics_consent') === 'granted',
+          analyticsConsent,
           companion: {
             engaged: false,
             assistedCart: false,
             assistedCheckout: false,
+            campaign,
           },
         }),
       });
@@ -281,7 +305,9 @@ export function CheckoutForm() {
           ? 'Cash on Delivery order placed.'
           : 'Order saved. Continue on WhatsApp for UPI payment.',
       );
-      sessionStorage.removeItem('wow_checkout_key');
+      try {
+        sessionStorage.removeItem('wow_checkout_key');
+      } catch {}
       router.push(
         `/order-success/${data.orderNumber}?method=${paymentMethod}${data.url ? `&wa=${encodeURIComponent(data.url)}` : ''}`,
       );
@@ -304,19 +330,6 @@ export function CheckoutForm() {
           <p>Add a product before checking out.</p>
           <Link className="button primary" href="/shop">
             Go to shop
-          </Link>
-        </section>
-      </AppShell>
-    );
-  if (authenticated !== true)
-    return (
-      <AppShell>
-        <ShoppingSteps current="account" />
-        <section className="empty-state">
-          <h1>Sign in before checkout</h1>
-          <p>Your cart is saved. Taking you to the secure account step…</p>
-          <Link className="button primary" href="/account?returnTo=checkout">
-            Continue to account
           </Link>
         </section>
       </AppShell>
@@ -369,12 +382,11 @@ export function CheckoutForm() {
                 />
               </label>
               <label>
-                Verified email
+                Email <small>optional</small>
                 <input
                   name="email"
                   type="email"
-                  required
-                  readOnly
+                  readOnly={Boolean(account?.email)}
                   autoComplete="email"
                   defaultValue={account?.email || ''}
                 />
@@ -512,7 +524,7 @@ export function CheckoutForm() {
                   ) || null
                 }
               />
-              {!selectedAddressId && (
+              {authenticated && !selectedAddressId && (
                 <div className="save-address-prompt wide">
                   <AddressLabelSelector
                     value={addressLabelType}
@@ -599,6 +611,20 @@ export function CheckoutForm() {
               <ProductImage src={i.image} alt={i.name} />
               <span>
                 {i.name} × {i.quantity}
+                {i.variantName && <small>Finish: {i.variantName}</small>}
+                {i.calculatedSize && (
+                  <small>
+                    Custom size: {i.calculatedSize.selectedHeight}{' '}
+                    {i.calculatedSize.dimensionUnit} tall ·{' '}
+                    {i.calculatedSize.width} × {i.calculatedSize.depth}{' '}
+                    {i.calculatedSize.dimensionUnit} footprint
+                  </small>
+                )}
+                {i.fixedSizeId && (
+                  <small>
+                    Size: {i.fixedSizeLabel} — {i.selectedHeight} cm
+                  </small>
+                )}
               </span>
               <b>{formatMoney(i.unitPrice * i.quantity)}</b>
             </div>
@@ -621,8 +647,7 @@ export function CheckoutForm() {
             <span>Total</span>
             <b>{formatMoney(totals.total)}</b>
           </div>
-          {authenticated && (
-            <section className="checkout-estimate" aria-live="polite">
+          <section className="checkout-estimate" aria-live="polite">
               <h3>Made for your order</h3>
               {currentPreview?.error ? (
                 <>
@@ -653,15 +678,16 @@ export function CheckoutForm() {
               ) : (
                 <p>Checking current prices and production availability…</p>
               )}
-            </section>
-          )}
+          </section>
           {error && <p className="form-error">{error}</p>}
           <div className="whatsapp-explainer">
             {paymentMethod === 'UPI' ? <MessageCircle /> : <ShieldCheck />}
             <p>
               {paymentMethod === 'UPI'
                 ? 'Your details and exact total are saved first. You’ll then continue on WhatsApp to complete UPI payment.'
-                : 'Place your Cash on Delivery order here. Once saved, it will appear in My Orders.'}
+                : authenticated
+                  ? 'Place your Cash on Delivery order here. Once saved, it will appear in My Orders.'
+                  : 'Place your Cash on Delivery order here. No account is required; you can track it securely after ordering.'}
             </p>
           </div>
           <WhatsAppHelpLink
@@ -672,7 +698,6 @@ export function CheckoutForm() {
             className={`button ${paymentMethod === 'UPI' ? 'whatsapp' : 'primary'} full`}
             disabled={
               loading ||
-              !authenticated ||
               !currentPreview?.totals ||
               launchTotals(totals.subtotal).missing > 0 ||
               (!paymentConfig.codEnabled && !paymentConfig.upiEnabled)

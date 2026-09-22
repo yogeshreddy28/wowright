@@ -153,7 +153,11 @@ it('preserves variant identity and SKU when a stale editor resubmits universal f
     ...input(),
     variants: [
       { name: 'Test Black', finishId: 'finish-test-black', sellingPrice: 599 },
-      { name: 'Test Copper', finishId: 'finish-test-copper', sellingPrice: 649 },
+      {
+        name: 'Test Copper',
+        finishId: 'finish-test-copper',
+        sellingPrice: 649,
+      },
     ],
   });
   const source = await persist(bindings.DB, stale);
@@ -168,7 +172,11 @@ it('preserves variant identity and SKU when a stale editor resubmits universal f
       ...stale,
       variants: [
         ...stale.variants,
-        { name: 'Test White', finishId: 'finish-test-white', sellingPrice: 629 },
+        {
+          name: 'Test White',
+          finishId: 'finish-test-white',
+          sellingPrice: 629,
+        },
       ],
     }),
     source.id,
@@ -202,9 +210,7 @@ it('rejects a duplicate variant SKU before D1 with the owning product and finish
         ...input(),
         id: source.id,
         name: 'First fixture',
-        variants: [
-          { name: 'Copper', sku: 'WR-SHARED-01', sellingPrice: 649 },
-        ],
+        variants: [{ name: 'Copper', sku: 'WR-SHARED-01', sellingPrice: 649 }],
       }),
     }),
   );
@@ -223,6 +229,24 @@ it('duplicates options, prices and safe image references as a new draft', async 
   const source = await persist(bindings.DB, {
     ...input(),
     internalUnitCost: 100,
+    resizable: true,
+    width: 6,
+    depth: 8,
+    height: 10,
+    minimumHeight: 8,
+    maximumHeight: 12,
+    defaultHeight: 10,
+    sizeIncrement: 1,
+    sizePriceBands: [
+      { minimumHeight: 8, maximumHeight: 12, sellingPrice: 699 },
+    ],
+    sizeRecommendations: [
+      {
+        minimumHeight: 8,
+        maximumHeight: 12,
+        label: 'Desk display',
+      },
+    ],
   });
   database.sqlite
     .prepare(
@@ -247,6 +271,25 @@ it('duplicates options, prices and safe image references as a new draft', async 
       .prepare('SELECT COUNT(*) n FROM product_options WHERE product_id=?')
       .get(copy.id)?.n,
   ).toBe(1);
+  expect(row.resizable).toBe(1);
+  expect(
+    database.sqlite
+      .prepare(
+        'SELECT minimum_height,maximum_height,selling_price FROM product_size_price_bands WHERE product_id=?',
+      )
+      .get(copy.id),
+  ).toMatchObject({
+    minimum_height: 8,
+    maximum_height: 12,
+    selling_price: 699,
+  });
+  expect(
+    database.sqlite
+      .prepare(
+        'SELECT label FROM product_size_recommendations WHERE product_id=?',
+      )
+      .get(copy.id),
+  ).toMatchObject({ label: 'Desk display' });
 });
 it('legacy configuration cannot bypass licence protection', async () => {
   const source = await persist(bindings.DB, input());

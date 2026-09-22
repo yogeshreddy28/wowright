@@ -106,11 +106,18 @@ export function DeliveryView() {
         method: values.get('method') || undefined,
         amount: values.get('amount') ? Number(values.get('amount')) : undefined,
       });
-      const otpResponse = await fetch('/api/delivery/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'generate', stopId: stop.id }) });
-      const otpResult = await otpResponse.json() as Row;
-      if (!otpResponse.ok) throw Error(otpResult.error || 'Could not create the delivery code.');
+      const otpResponse = await fetch('/api/delivery/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate', stopId: stop.id }),
+      });
+      const otpResult = (await otpResponse.json()) as Row;
+      if (!otpResponse.ok)
+        throw Error(otpResult.error || 'Could not create the delivery code.');
       await load();
-      setNotice('Handover saved. Ask the customer for the delivery code shown in My Orders.');
+      setNotice(
+        'Handover saved. Ask the customer for the delivery code shown in My Orders.',
+      );
     } catch (e) {
       setError(
         e instanceof Error
@@ -121,17 +128,35 @@ export function DeliveryView() {
       setBusy(false);
     }
   }
-  async function otpAction(stopId: string, actionName: 'verify' | 'resend', code?: string) {
+  async function otpAction(
+    stopId: string,
+    actionName: 'verify' | 'resend',
+    code?: string,
+  ) {
     if (busy) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true);
+    setError('');
+    setNotice('');
     try {
-      const response = await fetch('/api/delivery/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: actionName, stopId, code }) });
-      const body = await response.json() as Row;
-      if (!response.ok) throw Error(body.error || 'Delivery code update failed.');
+      const response = await fetch('/api/delivery/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: actionName, stopId, code }),
+      });
+      const body = (await response.json()) as Row;
+      if (!response.ok)
+        throw Error(body.error || 'Delivery code update failed.');
       await load();
-      setNotice(actionName === 'verify' ? 'Customer code verified. You can now complete delivery.' : 'A new code is ready in the customer’s My Orders page.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Delivery code update failed.'); }
-    finally { setBusy(false); }
+      setNotice(
+        actionName === 'verify'
+          ? 'Customer code verified. You can now complete delivery.'
+          : 'A new code is ready in the customer’s My Orders page.',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delivery code update failed.');
+    } finally {
+      setBusy(false);
+    }
   }
   const today = localDate(),
     stops = ((data?.stops || []) as Row[]).filter((s) =>
@@ -349,6 +374,9 @@ export function DeliveryView() {
                       <li key={n}>
                         {i.name}
                         {i.finish ? ' · ' + i.finish : ''}
+                        {i.height != null
+                          ? ` · ${i.sizeLabel ? `${i.sizeLabel} — ` : ''}${i.height} ${i.unit || 'cm'} tall`
+                          : ''}
                         <b> × {i.quantity}</b>
                       </li>
                     ),
@@ -389,9 +417,12 @@ export function DeliveryView() {
                       ? 'Navigation starts this stop and opens Maps.'
                       : 'Maps opens separately. Return here for the handover.'}
                   </small>
-                  {!['arrived', 'later_today', 'pending', 'otp_pending'].includes(
-                    selected.status,
-                  ) && (
+                  {![
+                    'arrived',
+                    'later_today',
+                    'pending',
+                    'otp_pending',
+                  ].includes(selected.status) && (
                     <button
                       className="button secondary full"
                       disabled={busy}
@@ -545,17 +576,86 @@ export function DeliveryView() {
               {canWork && selected.status === 'otp_pending' && (
                 <section className="ux-handover otp-handover">
                   <fieldset>
-                    <legend><span>4</span>Customer confirmation</legend>
-                    <p>Ask the customer to open My Orders and share the code only after checking and accepting the package.</p>
+                    <legend>
+                      <span>4</span>Customer confirmation
+                    </legend>
+                    <p>
+                      Ask the customer to open My Orders and share the code only
+                      after checking and accepting the package.
+                    </p>
                     {selected.otp_status !== 'verified' ? (
-                      <form onSubmit={(event) => { event.preventDefault(); void otpAction(selected.id, 'verify', String(new FormData(event.currentTarget).get('code') || '')); }}>
-                        <label>6-digit delivery code<input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required /></label>
-                        <button className="button primary full" disabled={busy}>{busy ? 'Checking…' : 'Verify code'}</button>
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void otpAction(
+                            selected.id,
+                            'verify',
+                            String(
+                              new FormData(event.currentTarget).get('code') ||
+                                '',
+                            ),
+                          );
+                        }}
+                      >
+                        <label>
+                          6-digit delivery code
+                          <input
+                            name="code"
+                            inputMode="numeric"
+                            pattern="[0-9]{6}"
+                            maxLength={6}
+                            autoComplete="one-time-code"
+                            required
+                          />
+                        </label>
+                        <button className="button primary full" disabled={busy}>
+                          {busy ? 'Checking…' : 'Verify code'}
+                        </button>
                       </form>
-                    ) : <div className="ux-paid"><CheckCircle2 /> Customer code verified.</div>}
-                    <button type="button" className="button secondary full" disabled={busy} onClick={() => void otpAction(selected.id, 'resend')}>Generate a new code</button>
+                    ) : (
+                      <div className="ux-paid">
+                        <CheckCircle2 /> Customer code verified.
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="button secondary full"
+                      disabled={busy}
+                      onClick={() => void otpAction(selected.id, 'resend')}
+                    >
+                      Generate a new code
+                    </button>
                   </fieldset>
-                  {selected.otp_status === 'verified' && <button type="button" className="button primary full" disabled={busy} onClick={async () => { try { setBusy(true); await send({ stopId: selected.id, action: 'complete' }); setNotice('Delivery completed. Payment, proof and customer confirmation are saved.'); setSelectedId(''); } catch (e) { setError(e instanceof Error ? e.message : 'Could not complete delivery.'); } finally { setBusy(false); } }}>Complete delivery <CheckCircle2 size={18} /></button>}
+                  {selected.otp_status === 'verified' && (
+                    <button
+                      type="button"
+                      className="button primary full"
+                      disabled={busy}
+                      onClick={async () => {
+                        try {
+                          setBusy(true);
+                          await send({
+                            stopId: selected.id,
+                            action: 'complete',
+                          });
+                          setNotice(
+                            'Delivery completed. Payment, proof and customer confirmation are saved.',
+                          );
+                          setSelectedId('');
+                        } catch (e) {
+                          setError(
+                            e instanceof Error
+                              ? e.message
+                              : 'Could not complete delivery.',
+                          );
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      Complete delivery <CheckCircle2 size={18} />
+                    </button>
+                  )}
                 </section>
               )}
               {canWork && selected.status !== 'pending' && (

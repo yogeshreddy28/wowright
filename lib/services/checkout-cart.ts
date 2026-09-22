@@ -8,6 +8,8 @@ export const checkoutItems = z
     z.object({
       productId: z.string().min(1).max(100),
       variantId: z.string().max(100).optional(),
+      selectedHeight: z.number().positive().finite().optional(),
+      fixedSizeId: z.string().min(1).max(100).optional(),
       quantity: z.number().int().min(1).max(99),
       unitPrice: z.number().optional(),
       selections: z.record(
@@ -38,7 +40,13 @@ export async function verifyCheckoutCart(
       let current, price;
       try {
         current = assertPurchasableProduct(product);
-        price = calculateUnitPrice(current, item.selections, item.variantId);
+        price = calculateUnitPrice(
+          current,
+          item.selections,
+          item.variantId,
+          item.selectedHeight,
+          item.fixedSizeId,
+        );
       } catch {
         throw new CommerceError(
           'A product or customization is no longer available. Reopen the product and update your cart.',
@@ -52,12 +60,25 @@ export async function verifyCheckoutCart(
         );
       const internal = await db
         .prepare(
-          'SELECT COALESCE((SELECT sku FROM product_variants WHERE id=? AND product_id=?),sku) sku,estimated_print_minutes,internal_unit_cost FROM products WHERE id=?',
+          `SELECT COALESCE((SELECT sku FROM product_variants WHERE id=? AND product_id=?),p.sku) sku,
+          COALESCE((SELECT print_minutes FROM product_fixed_sizes WHERE id=? AND product_id=p.id),(SELECT print_minutes FROM product_size_price_bands WHERE id=? AND product_id=p.id),p.estimated_print_minutes) estimated_print_minutes,
+          (SELECT filament_grams FROM product_fixed_sizes WHERE id=? AND product_id=p.id) filament_grams,
+          COALESCE((SELECT production_cost FROM product_size_price_bands WHERE id=? AND product_id=p.id),p.internal_unit_cost) internal_unit_cost
+          FROM products p WHERE p.id=?`,
         )
-        .bind(item.variantId || null, item.productId, item.productId)
+        .bind(
+          item.variantId || null,
+          item.productId,
+          price.fixedSize?.id || null,
+          price.sizing?.pricingBandId || null,
+          price.fixedSize?.id || null,
+          price.sizing?.pricingBandId || null,
+          item.productId,
+        )
         .first<{
           sku: string | null;
           estimated_print_minutes: number | null;
+          filament_grams: number | null;
           internal_unit_cost: number | null;
         }>();
       return {
@@ -66,6 +87,8 @@ export async function verifyCheckoutCart(
         product: current,
         unitPrice: price.unitPrice,
         adjustments: price.adjustments,
+        sizing: price.sizing,
+        fixedSize: price.fixedSize,
         variant: current.variants?.find((v) => v.id === item.variantId),
         internal,
       };

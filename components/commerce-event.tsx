@@ -12,8 +12,13 @@ export function CommerceEvent({
   productId?: string;
   metadata?: Record<string, unknown>;
 }) {
+  const metadataJson = JSON.stringify(metadata || {});
   useEffect(() => {
-    trackCommerce(name,metadata,productId);
-  }, [name, path, productId, metadata]);
+    trackCommerce(
+      name,
+      JSON.parse(metadataJson) as Record<string, unknown>,
+      productId,
+    );
+  }, [name, path, productId, metadataJson]);
   return null;
 }

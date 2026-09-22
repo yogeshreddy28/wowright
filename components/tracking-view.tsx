@@ -98,6 +98,23 @@ export function TrackingView({ token }: { token: string }) {
                     'Standard finish'}{' '}
                   · Qty {item.quantity}
                 </p>
+                {item.selected_height != null && (
+                  <p className="size-snapshot">
+                    {item.fixed_size_label
+                      ? `Size: ${item.fixed_size_label} — `
+                      : 'Custom size: '}
+                    {item.selected_height} {item.size_dimension_unit || 'cm'}{' '}
+                    tall
+                    {item.calculated_width != null &&
+                      item.calculated_depth != null && (
+                        <small>
+                          {' '}
+                          · {item.calculated_width} × {item.calculated_depth}{' '}
+                          {item.size_dimension_unit || 'cm'} footprint
+                        </small>
+                      )}
+                  </p>
+                )}
               </div>
             </article>
           ))}

@@ -25,6 +25,7 @@ export async function GET(
     );
   const [items, timeline, media] = await env.DB.batch([
     env.DB.prepare(`SELECT oi.product_name,oi.variant_name,oi.selected_finish,oi.quantity,oi.line_total,
+      oi.selected_height,oi.fixed_size_label,oi.calculated_width,oi.calculated_depth,oi.size_scale,oi.size_dimension_unit,
       (SELECT '/api/product-images/'||pi.id FROM product_images pi WHERE pi.product_id=oi.product_id ORDER BY CASE pi.role WHEN 'main' THEN 0 ELSE 1 END,pi.sort_order LIMIT 1) image
       FROM order_items oi WHERE oi.order_id=? ORDER BY oi.created_at`).bind(
       order.id,

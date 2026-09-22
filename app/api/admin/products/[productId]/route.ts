@@ -8,7 +8,15 @@ export async function GET(
   if (!(await verifyAdmin(request)))
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   const { productId } = await params;
-  const [product, variants, images, tags, related] = await env.DB.batch([
+  const [
+    product,
+    variants,
+    images,
+    tags,
+    related,
+    sizePriceBands,
+    sizeRecommendations,
+  ] = await env.DB.batch([
     env.DB.prepare('SELECT * FROM products WHERE id=?').bind(productId),
     env.DB.prepare(
       'SELECT v.*,(SELECT json_group_array(pvi.image_id) FROM product_variant_images pvi WHERE pvi.variant_id=v.id ORDER BY pvi.sort_order) exact_image_ids FROM product_variants v WHERE v.product_id=? ORDER BY v.sort_order,v.created_at',
@@ -21,6 +29,12 @@ export async function GET(
     ).bind(productId),
     env.DB.prepare(
       'SELECT related_product_id FROM related_products WHERE product_id=? ORDER BY sort_order',
+    ).bind(productId),
+    env.DB.prepare(
+      'SELECT * FROM product_size_price_bands WHERE product_id=? ORDER BY sort_order,minimum_height',
+    ).bind(productId),
+    env.DB.prepare(
+      'SELECT * FROM product_size_recommendations WHERE product_id=? ORDER BY sort_order,minimum_height',
     ).bind(productId),
   ]);
   const row = product.results[0] as Record<string, unknown> | undefined;
@@ -45,6 +59,8 @@ export async function GET(
       relatedProductIds: related.results.map((item) =>
         String((item as { related_product_id: string }).related_product_id),
       ),
+      sizePriceBands: sizePriceBands.results,
+      sizeRecommendations: sizeRecommendations.results,
     },
   });
 }

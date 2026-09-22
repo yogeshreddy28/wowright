@@ -9,8 +9,11 @@ import { CommerceEvent } from '@/components/commerce-event';
 import { ProductReviews } from '@/components/reviews';
 import {
   getCatalogProductBySlug,
+  getCatalogDraftPreviewBySlug,
   getRelatedProducts,
 } from '@/lib/catalog-repository';
+import { verifyAdmin } from '@/lib/admin-auth';
+import { headers } from 'next/headers';
 import { formatMoney, getStartingPrice } from '@/lib/services/pricing';
 import { createWhatsAppInterestURL } from '@/lib/services/whatsapp';
 import { toProductCardData } from '@/lib/product-card-data';
@@ -23,16 +26,36 @@ import {
 } from 'lucide-react';
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ preview?: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const product = await getCatalogProductBySlug(slug);
+  const requestedPreview = (await searchParams).preview === '1';
+  const requestHeaders = requestedPreview ? await headers() : null;
+  const canPreview =
+    requestedPreview && requestHeaders
+      ? await verifyAdmin(
+          new Request(
+            'https://wowright.in/product/' + encodeURIComponent(slug),
+            {
+              headers: { cookie: requestHeaders.get('cookie') || '' },
+            },
+          ),
+        )
+      : false;
+  const product = canPreview
+    ? await getCatalogDraftPreviewBySlug(slug)
+    : await getCatalogProductBySlug(slug);
   if (!product) return { title: 'Product unavailable' };
   return {
     title: product.name,
     description: product.shortDescription,
-    alternates: { canonical: `/product/${product.slug}` },
+    robots: canPreview ? { index: false, follow: false } : undefined,
+    alternates: canPreview
+      ? undefined
+      : { canonical: `/product/${product.slug}` },
     openGraph: {
       title: `${product.name} · WOW RIGHT`,
       description: product.shortDescription,
@@ -48,11 +71,26 @@ export async function generateMetadata({
 }
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ preview?: string }>;
 }) {
   const { slug } = await params;
-  const product = await getCatalogProductBySlug(slug);
+  const requestedPreview = (await searchParams).preview === '1';
+  const requestHeaders = requestedPreview ? await headers() : null;
+  const canPreview =
+    requestedPreview && requestHeaders
+      ? await verifyAdmin(
+          new Request(
+            'https://wowright.in/product/' + encodeURIComponent(slug),
+            { headers: { cookie: requestHeaders.get('cookie') || '' } },
+          ),
+        )
+      : false;
+  const product = canPreview
+    ? await getCatalogDraftPreviewBySlug(slug)
+    : await getCatalogProductBySlug(slug);
   if (!product) notFound();
   const custom =
     product.stockMode === 'quote_only' ||
@@ -96,7 +134,11 @@ export default async function ProductPage({
         name="ViewContent"
         path={`/product/${product.slug}`}
         productId={product.id}
-        metadata={{ price: startingPrice }}
+        metadata={{
+          price: startingPrice,
+          productName: product.name,
+          category: product.category,
+        }}
       />
       <script
         type="application/ld+json"
@@ -109,6 +151,12 @@ export default async function ProductPage({
         <span>/</span>
         <span>{product.name}</span>
       </nav>
+      {canPreview && product.publishingStatus === 'draft' && (
+        <p className="admin-draft-notice">
+          Admin draft preview — customers cannot see or order this product until
+          it is published.
+        </p>
+      )}
       <section className="product-detail">
         <ProductGallery
           images={product.images}

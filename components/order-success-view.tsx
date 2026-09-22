@@ -22,6 +22,7 @@ export function OrderSuccessView({ orderId }: { orderId: string }) {
   const [wa, setWa] = useState('');
   const [data, setData] = useState<OrderData | null>(null);
   const [error, setError] = useState(false);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   useEffect(() => {
     fetch(`/api/orders/${encodeURIComponent(orderId)}`)
       .then(async (response) => {
@@ -33,6 +34,9 @@ export function OrderSuccessView({ orderId }: { orderId: string }) {
         setWa(body.whatsappUrl || '');
       })
       .catch(() => setError(true));
+    fetch('/api/account')
+      .then((response) => setSignedIn(response.ok))
+      .catch(() => setSignedIn(false));
     emitCompanionEvent('CHECKOUT_COMPLETED', { metadata: { orderId } });
   }, [orderId]);
   const upi = data?.order.payment_method === 'UPI';
@@ -78,7 +82,7 @@ export function OrderSuccessView({ orderId }: { orderId: string }) {
           <Check />
         </div>
         <p className="eyebrow">Saved securely by WOW RIGHT</p>
-        <h1>{pending ? 'Your order has been saved' : 'Your saved order'}</h1>
+        <h1>{pending ? 'Your order has been saved' : 'Order confirmed 🎉'}</h1>
         <strong className="success-order-id">{orderId}</strong>
         <p>
           {pending
@@ -109,6 +113,19 @@ export function OrderSuccessView({ orderId }: { orderId: string }) {
         <Link className="button secondary" href="/shop">
           <ShoppingBag /> Continue Shopping
         </Link>
+        {signedIn === false && (
+          <aside className="post-order-account">
+            <h2>Want easier tracking next time?</h2>
+            <p>
+              Your order is already confirmed. Creating an account is optional
+              and lets you keep orders and addresses together.
+            </p>
+            <Link className="button secondary" href="/account">
+              Sign in / Create Account
+            </Link>
+            <Link href={`/order/${orderId}`}>Continue without account</Link>
+          </aside>
+        )}
       </section>
     </AppShell>
   );

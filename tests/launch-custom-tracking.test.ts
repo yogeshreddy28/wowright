@@ -252,6 +252,98 @@ it('browser events cannot create purchases or persist arbitrary secret payloads'
   expect(result).not.toContain('sk-isolated-test-only');
   expect(result).toContain('quantity');
 });
+it('queues one consented guest AddToCart event for Pixel/CAPI deduplication', async () => {
+  const eventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const response = await analytics(
+    new Request('http://local/api/analytics', {
+      method: 'POST',
+      headers: { origin: 'http://local', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'AddToCart',
+        eventId,
+        sessionId: 'guest-session',
+        productId: 'product-1',
+        consent: true,
+        metadata: {
+          productName: 'Little Krishna',
+          variant: 'Copper Silky',
+          quantity: 2,
+          price: 1799,
+          value: 3598,
+        },
+      }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  const outbox = database.sqlite
+    .prepare('SELECT id,payload FROM commerce_outbox WHERE id=?')
+    .get(eventId)!;
+  expect(outbox.id).toBe(eventId);
+  expect(JSON.parse(String(outbox.payload))).toMatchObject({
+    event_id: eventId,
+    event_name: 'AddToCart',
+    custom_data: {
+      currency: 'INR',
+      content_ids: ['product-1'],
+      content_name: 'Little Krishna',
+      variant: 'Copper Silky',
+      value: 3598,
+      contents: [{ id: 'product-1', quantity: 2, item_price: 1799 }],
+    },
+  });
+  expect(
+    (
+      await analytics(
+        new Request('http://local/api/analytics', {
+          method: 'POST',
+          headers: {
+            origin: 'http://local',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: 'AddToCart',
+            eventId,
+            sessionId: 'guest-session',
+            productId: 'product-1',
+            consent: true,
+          }),
+        }),
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    database.sqlite
+      .prepare('SELECT COUNT(*) count FROM commerce_outbox WHERE id=?')
+      .get(eventId)!.count,
+  ).toBe(1);
+});
+it('accepts one settled size-change event with normalized sizing metadata', async () => {
+  const response = await analytics(
+    new Request('http://local/api/analytics', {
+      method: 'POST',
+      headers: { origin: 'http://local', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'size_changed',
+        productId: 'product',
+        metadata: {
+          selectedHeight: 18,
+          recommendation: 'Pooja space',
+          pricingVersion: 2,
+          ignoredInternalCost: 123,
+        },
+      }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  const event = database.sqlite
+    .prepare("SELECT metadata FROM analytics_events WHERE name='size_changed'")
+    .get()!;
+  expect(JSON.parse(String(event.metadata))).toEqual({
+    selectedHeight: 18,
+    recommendation: 'Pooja space',
+    pricingVersion: 2,
+  });
+});
 it('only delivered purchases can be reviewed once; test purchases never appear publicly', async () => {
   const order = await approvedOrder();
   const item = database.sqlite

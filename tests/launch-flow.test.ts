@@ -10,7 +10,11 @@ import {
 } from '@/lib/services/production';
 import { fulfill, confirmUPI } from '@/lib/services/fulfillment';
 import { assignBatch, updateStop } from '@/lib/services/delivery-workflow';
-import { generateDeliveryOtp, revealDeliveryOtp, verifyDeliveryOtp } from '@/lib/services/delivery-otp';
+import {
+  generateDeliveryOtp,
+  revealDeliveryOtp,
+  verifyDeliveryOtp,
+} from '@/lib/services/delivery-otp';
 const bindings = vi.hoisted(() => ({
   DB: {} as D1Database,
   FILES: { put: vi.fn(), delete: vi.fn() },
@@ -43,12 +47,13 @@ async function requestCheckout(
   method = 'COD',
   overrides: Record<string, unknown> = {},
   key = crypto.randomUUID(),
+  requestCookie = cookie,
 ) {
   return checkout(
     new Request('http://local/api/checkout', {
       method: 'POST',
       headers: {
-        cookie,
+        cookie: requestCookie,
         origin: 'http://local',
         'Content-Type': 'application/json',
         'Idempotency-Key': key,
@@ -90,7 +95,7 @@ async function requestPreview(
         origin: 'http://local',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({ sessionId: session, items }),
     }),
   );
 }
@@ -140,17 +145,34 @@ describe('launch commerce rules', () => {
       ).estimatedDeliveryDate,
     ).toBeNull();
   });
-  it('requires authentication and rejects cross-origin checkout', async () => {
+  it('allows guest checkout but still rejects cross-origin requests', async () => {
+    const guest = await requestCheckout(
+      'COD',
+      {
+        customer: {
+          ...customer,
+          mobile: '9000000091',
+          email: '',
+          labelType: undefined,
+        },
+      },
+      crypto.randomUUID(),
+      '',
+    );
+    expect(guest.status).toBe(200);
+    const guestCookie = guest.headers.get('set-cookie')!;
+    expect(guestCookie).toContain('wow_order_access=');
+    const guestOrder = (await guest.json()) as { orderNumber: string };
     expect(
       (
-        await checkout(
-          new Request('http://local/api/checkout', {
-            method: 'POST',
-            body: '{}',
+        await orderGet(
+          new Request('http://local', {
+            headers: { cookie: guestCookie.split(';')[0] },
           }),
+          { params: Promise.resolve({ orderId: guestOrder.orderNumber }) },
         )
       ).status,
-    ).toBe(401);
+    ).toBe(200);
     expect(
       (
         await checkout(
@@ -163,11 +185,77 @@ describe('launch commerce rules', () => {
       ).status,
     ).toBe(403);
   });
-  it('blocks checkout when the account email is missing or unverified', async () => {
-    database.sqlite.exec("UPDATE customers SET email=NULL,email_normalized=NULL,email_verified_at=NULL WHERE id='test-customer'");
-    expect((await requestCheckout()).status).toBe(403);
-    database.sqlite.exec("UPDATE customers SET email='checkout@example.test',email_normalized='checkout@example.test' WHERE id='test-customer'");
-    expect((await requestCheckout()).status).toBe(403);
+  it('keeps email optional for signed-in and guest checkout', async () => {
+    database.sqlite.exec(
+      "UPDATE customers SET email=NULL,email_normalized=NULL,email_verified_at=NULL WHERE id='test-customer'",
+    );
+    expect(
+      (
+        await requestCheckout('COD', {
+          customer: { ...customer, email: '' },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await requestCheckout(
+          'COD',
+          {
+            customer: {
+              ...customer,
+              mobile: '9000000092',
+              email: '',
+              labelType: undefined,
+            },
+          },
+          crypto.randomUUID(),
+          '',
+        )
+      ).status,
+    ).toBe(200);
+  });
+  it('normalizes guest mobile numbers without exposing or duplicating an existing customer', async () => {
+    const first = await requestCheckout(
+      'COD',
+      {
+        customer: {
+          ...customer,
+          mobile: '90000 00091',
+          email: '',
+          labelType: undefined,
+        },
+      },
+      crypto.randomUUID(),
+      '',
+    );
+    expect(first.status).toBe(200);
+    const second = await requestCheckout(
+      'COD',
+      {
+        customer: {
+          ...customer,
+          mobile: '+91 90000 00091',
+          email: '',
+          labelType: undefined,
+        },
+      },
+      crypto.randomUUID(),
+      '',
+    );
+    expect(second.status).toBe(200);
+    expect(
+      database.sqlite
+        .prepare("SELECT COUNT(*) count FROM customers WHERE mobile='919000000091'")
+        .get()!.count,
+    ).toBe(1);
+    expect(
+      (await orderGet(new Request('http://local'), {
+        params: Promise.resolve({
+          orderId: ((await second.json()) as { orderNumber: string })
+            .orderNumber,
+        }),
+      })).status,
+    ).toBe(403);
   });
   it('creates COD on-site and deduplicates checkout safely', async () => {
     const key = crypto.randomUUID();
@@ -232,7 +320,7 @@ describe('launch commerce rules', () => {
     expect(body.estimatedDeliveryDate).toBeNull();
     expect(body.requiresOwnerSchedule).toBe(true);
   });
-  it('preview rolls into the next available production day and requires a same-origin signed-in customer', async () => {
+  it('preview rolls into the next available production day and requires same-origin input', async () => {
     database.sqlite.exec('UPDATE products SET estimated_print_minutes=600');
     expect((await requestCheckout()).status).toBe(200);
     expect(
@@ -247,7 +335,7 @@ describe('launch commerce rules', () => {
           }),
         )
       ).status,
-    ).toBe(401);
+    ).toBe(400);
     expect(
       (
         await checkoutPreview(
@@ -296,6 +384,113 @@ describe('launch commerce rules', () => {
       "UPDATE products SET product_type='normal',availability='temporarily_unavailable'",
     );
     expect((await requestCheckout()).status).toBe(409);
+  });
+  it('revalidates and snapshots an exact proportional size through checkout', async () => {
+    database.sqlite.exec(`
+      UPDATE products SET width=6,depth=8,height=10,dimension_unit='cm',resizable=1,
+        minimum_height=8,maximum_height=20,default_height=10,size_increment=1,size_pricing_version=4
+      WHERE id='test-product';
+      INSERT INTO product_size_price_bands(id,product_id,minimum_height,maximum_height,selling_price,print_minutes,production_cost,version)
+      VALUES('band-small','test-product',8,10,599,120,100,4),
+        ('band-medium','test-product',11,15,999,360,250,4),
+        ('band-large','test-product',16,20,1399,720,450,4);
+      INSERT INTO product_size_recommendations(id,product_id,minimum_height,maximum_height,label)
+      VALUES('recommendation-display','test-product',11,15,'Desk or shelf');
+    `);
+    const response = await requestCheckout('COD', {
+      items: [
+        {
+          productId: 'test-product',
+          variantId: 'test-finish',
+          selectedHeight: 15,
+          quantity: 1,
+          unitPrice: 999,
+          selections: {},
+        },
+      ],
+    });
+    expect(response.status).toBe(200);
+    expect(
+      database.sqlite
+        .prepare(
+          'SELECT unit_price,selected_height,calculated_width,calculated_depth,size_scale,size_price_band_id,size_pricing_version,size_dimension_unit,estimated_print_minutes,unit_cost FROM order_items',
+        )
+        .get(),
+    ).toMatchObject({
+      unit_price: 999,
+      selected_height: 15,
+      calculated_width: 9,
+      calculated_depth: 12,
+      size_scale: 1.5,
+      size_price_band_id: 'band-medium',
+      size_pricing_version: 4,
+      size_dimension_unit: 'cm',
+      estimated_print_minutes: 360,
+      unit_cost: 250,
+    });
+    expect(
+      database.sqlite
+        .prepare(
+          'SELECT option_key,value FROM order_item_customizations ORDER BY option_key',
+        )
+        .all(),
+    ).toEqual([
+      { option_key: 'calculated_depth', value: '12 cm' },
+      { option_key: 'calculated_width', value: '9 cm' },
+      { option_key: 'selected_height', value: '15 cm' },
+      { option_key: 'size_scale', value: '150%' },
+    ]);
+  });
+  it('snapshots a fixed size, finish, owner price, print time and PLA without invented width or depth', async () => {
+    database.sqlite.exec(`
+      INSERT INTO product_variants(id,product_id,name,sku,selling_price) VALUES('test-copper','test-product','Copper Silky','TEST-COPPER',1799);
+      INSERT INTO product_fixed_sizes(id,product_id,label,height_cm,print_minutes,filament_grams) VALUES('test-xl','test-product','XL',24.6,1181,466);
+      INSERT INTO product_fixed_size_prices(size_id,variant_id,selling_price) VALUES('test-xl','test-finish',3599),('test-xl','test-copper',3799);
+    `);
+    const response = await requestCheckout('COD', {
+      items: [
+        {
+          productId: 'test-product',
+          variantId: 'test-copper',
+          fixedSizeId: 'test-xl',
+          quantity: 1,
+          unitPrice: 3799,
+          selections: {},
+        },
+      ],
+    });
+    expect(response.status).toBe(200);
+    expect(
+      database.sqlite
+        .prepare(
+          'SELECT fixed_size_id,fixed_size_label,selected_height,calculated_width,calculated_depth,selected_finish,unit_price,estimated_print_minutes,filament_grams FROM order_items',
+        )
+        .get(),
+    ).toMatchObject({
+      fixed_size_id: 'test-xl',
+      fixed_size_label: 'XL',
+      selected_height: 24.6,
+      calculated_width: null,
+      calculated_depth: null,
+      selected_finish: 'Copper Silky',
+      unit_price: 3799,
+      estimated_print_minutes: 1181,
+      filament_grams: 466,
+    });
+    expect(
+      (
+        await requestPreview([
+          {
+            productId: 'test-product',
+            variantId: 'test-copper',
+            fixedSizeId: 'test-xl',
+            quantity: 1,
+            unitPrice: 3599,
+            selections: {},
+          },
+        ] as any)
+      ).status,
+    ).toBe(409);
   });
   it('UPI persists pending before handoff and manual payment schedules work once', async () => {
     const r = await requestCheckout('UPI'),
@@ -467,11 +662,29 @@ describe('launch commerce rules', () => {
       method: 'cash',
       amount: 648,
     });
-    await generateDeliveryOtp(database.db, 'test-driver', stop.id, 'isolated-test-delivery-secret-long-enough');
-    const revealed = await revealDeliveryOtp(database.db, order.id, 'test-customer', 'isolated-test-delivery-secret-long-enough');
+    await generateDeliveryOtp(
+      database.db,
+      'test-driver',
+      stop.id,
+      'isolated-test-delivery-secret-long-enough',
+    );
+    const revealed = await revealDeliveryOtp(
+      database.db,
+      order.id,
+      'test-customer',
+      'isolated-test-delivery-secret-long-enough',
+    );
     expect(revealed?.code).toMatch(/^\d{6}$/);
-    await verifyDeliveryOtp(database.db, 'test-driver', stop.id, revealed!.code);
-    await updateStop(database.db, 'test-driver', { stopId: stop.id, action: 'complete' });
+    await verifyDeliveryOtp(
+      database.db,
+      'test-driver',
+      stop.id,
+      revealed!.code,
+    );
+    await updateStop(database.db, 'test-driver', {
+      stopId: stop.id,
+      action: 'complete',
+    });
     expect(
       database.sqlite
         .prepare('SELECT status,payment_status FROM orders WHERE id=?')

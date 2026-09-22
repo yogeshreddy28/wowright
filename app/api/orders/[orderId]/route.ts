@@ -28,7 +28,7 @@ export async function GET(
     );
   const [items, timeline] = await env.DB.batch([
     env.DB.prepare(
-      "SELECT i.id,i.product_id,i.product_name,i.variant_name,i.quantity,i.unit_price,i.line_total,CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END reviewed,COALESCE((SELECT '/api/product-images/'||pi.id FROM product_images pi WHERE pi.product_id=i.product_id AND pi.role='main' ORDER BY pi.sort_order LIMIT 1),json_extract(p.images,'$[0]')) image FROM order_items i LEFT JOIN products p ON p.id=i.product_id LEFT JOIN reviews r ON r.order_item_id=i.id WHERE i.order_id = ?",
+      "SELECT i.id,i.product_id,i.product_name,i.variant_name,i.selected_finish,i.quantity,i.unit_price,i.line_total,i.selected_height,i.fixed_size_label,i.calculated_width,i.calculated_depth,i.size_scale,i.size_dimension_unit,CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END reviewed,COALESCE((SELECT '/api/product-images/'||pi.id FROM product_images pi WHERE pi.product_id=i.product_id AND pi.role='main' ORDER BY pi.sort_order LIMIT 1),json_extract(p.images,'$[0]')) image FROM order_items i LEFT JOIN products p ON p.id=i.product_id LEFT JOIN reviews r ON r.order_item_id=i.id WHERE i.order_id = ?",
     ).bind(order.id),
     env.DB.prepare(
       'SELECT from_status,to_status,created_at FROM order_timeline WHERE order_id = ? ORDER BY created_at',
@@ -41,6 +41,12 @@ export async function GET(
     order: safeOrder,
     items: items.results,
     timeline: timeline.results,
-    whatsappUrl: order.payment_method==='UPI'&&order.payment_status!=='paid'?createUPIPaymentURL({orderNumber:String(order.order_number),total:Number(order.total)}):undefined,
+    whatsappUrl:
+      order.payment_method === 'UPI' && order.payment_status !== 'paid'
+        ? createUPIPaymentURL({
+            orderNumber: String(order.order_number),
+            total: Number(order.total),
+          })
+        : undefined,
   });
 }
