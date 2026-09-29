@@ -39,8 +39,8 @@ function duplicateResponse(existing: ExistingClaim, input: { name: string; colle
 export async function POST(request: Request) {
   try {
     sameOrigin(request);
-    const input = normalizeCollegeSurvey(await request.json());
     await ensureCollegeSurveySchema(env.DB);
+    const input = normalizeCollegeSurvey(await request.json());
     const ipAllowed = await durableRateLimit(
       env.DB,
       `college-survey:ip:${clientAddress(request)}`,
