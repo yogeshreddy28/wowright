@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { z } from 'zod';
 import { verifyAdmin } from '@/lib/admin-auth';
+import { ensureCollegeSurveySchema } from '@/lib/services/college-survey';
 import { CommerceError, safeError, sameOrigin } from '@/lib/services/launch-rules';
 
 type SurveyRow = {
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
   if (!(await verifyAdmin(request)))
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   try {
+    await ensureCollegeSurveySchema(env.DB);
     const [summary, rowsResult, topInterest, budgets, buyingDrivers, intents, colleges] =
       await Promise.all([
         env.DB.prepare(`SELECT
@@ -132,6 +134,7 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     sameOrigin(request);
+    await ensureCollegeSurveySchema(env.DB);
     const { action, claimCode } = redeemSchema.parse(await request.json());
     const response = await env.DB.prepare(
       'SELECT id,name,college,claim_code,redeemed,redeemed_at FROM survey_responses WHERE claim_code=? LIMIT 1',

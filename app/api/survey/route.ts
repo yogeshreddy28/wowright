@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { durableRateLimit } from '@/lib/rate-limit';
 import {
   createSurveyClaimCode,
+  ensureCollegeSurveySchema,
   mayReturnExistingClaim,
   normalizeCollegeSurvey,
 } from '@/lib/services/college-survey';
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
   try {
     sameOrigin(request);
     const input = normalizeCollegeSurvey(await request.json());
+    await ensureCollegeSurveySchema(env.DB);
     const ipAllowed = await durableRateLimit(
       env.DB,
       `college-survey:ip:${clientAddress(request)}`,
