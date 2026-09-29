@@ -49,6 +49,14 @@ export const products = sqliteTable(
     height: real('height'),
     dimensionUnit: text('dimension_unit').notNull().default('cm'),
     dimensionDisplayOverride: text('dimension_display_override'),
+    resizable: integer('resizable', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    minimumHeight: real('minimum_height'),
+    maximumHeight: real('maximum_height'),
+    defaultHeight: real('default_height'),
+    sizeIncrement: real('size_increment'),
+    sizePricingVersion: integer('size_pricing_version').notNull().default(1),
     material: text('material'),
     deliveryNotes: text('delivery_notes'),
     careInstructions: text('care_instructions'),
@@ -105,6 +113,28 @@ export const productVariants = sqliteTable(
     uniqueIndex('idx_variants_sku').on(t.sku),
   ],
 );
+export const productFixedSizes = sqliteTable('product_fixed_sizes', {
+  id: text('id').primaryKey(),
+  productId: text('product_id')
+    .notNull()
+    .references(() => products.id, { onDelete: 'cascade' }),
+  label: text('label').notNull(),
+  heightCm: real('height_cm').notNull(),
+  placementNote: text('placement_note'),
+  printMinutes: integer('print_minutes'),
+  filamentGrams: real('filament_grams'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+});
+export const productFixedSizePrices = sqliteTable('product_fixed_size_prices', {
+  sizeId: text('size_id')
+    .notNull()
+    .references(() => productFixedSizes.id, { onDelete: 'cascade' }),
+  variantId: text('variant_id')
+    .notNull()
+    .references(() => productVariants.id, { onDelete: 'cascade' }),
+  sellingPrice: integer('selling_price').notNull(),
+});
 export const productOptions = sqliteTable(
   'product_options',
   {
@@ -137,6 +167,49 @@ export const productOptionValues = sqliteTable(
     ...timestamps,
   },
   (t) => [index('idx_option_values_option').on(t.optionId)],
+);
+export const productSizePriceBands = sqliteTable(
+  'product_size_price_bands',
+  {
+    id: text('id').primaryKey(),
+    productId: text('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    minimumHeight: real('minimum_height').notNull(),
+    maximumHeight: real('maximum_height').notNull(),
+    sellingPrice: integer('selling_price').notNull(),
+    filamentGrams: real('filament_grams'),
+    printMinutes: integer('print_minutes'),
+    supportGrams: real('support_grams'),
+    productionCost: integer('production_cost'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (t) => [
+    index('idx_product_size_price_bands_product').on(t.productId, t.sortOrder),
+  ],
+);
+export const productSizeRecommendations = sqliteTable(
+  'product_size_recommendations',
+  {
+    id: text('id').primaryKey(),
+    productId: text('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    minimumHeight: real('minimum_height').notNull(),
+    maximumHeight: real('maximum_height').notNull(),
+    label: text('label').notNull(),
+    description: text('description'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index('idx_product_size_recommendations_product').on(
+      t.productId,
+      t.sortOrder,
+    ),
+  ],
 );
 export const customers = sqliteTable(
   'customers',
@@ -331,6 +404,16 @@ export const orderItems = sqliteTable(
     variantId: text('variant_id'),
     variantName: text('variant_name'),
     selectedFinish: text('selected_finish'),
+    selectedHeight: real('selected_height'),
+    fixedSizeId: text('fixed_size_id'),
+    fixedSizeLabel: text('fixed_size_label'),
+    filamentGrams: real('filament_grams'),
+    calculatedWidth: real('calculated_width'),
+    calculatedDepth: real('calculated_depth'),
+    sizeScale: real('size_scale'),
+    sizePriceBandId: text('size_price_band_id'),
+    sizePricingVersion: integer('size_pricing_version'),
+    sizeDimensionUnit: text('size_dimension_unit'),
     quantity: integer('quantity').notNull(),
     unitPrice: integer('unit_price').notNull(),
     lineTotal: integer('line_total').notNull(),
@@ -1064,4 +1147,51 @@ export const abuseLimits = sqliteTable(
     resetAt: integer('reset_at').notNull(),
   },
   (t) => [index('idx_abuse_reset').on(t.resetAt)],
+);
+
+export const surveyResponses = sqliteTable(
+  'survey_responses',
+  {
+    id: text('id').primaryKey(),
+    claimCode: text('claim_code').notNull(),
+    age: text('age').notNull(),
+    college: text('college').notNull(),
+    course: text('course'),
+    year: text('year'),
+    interests: text('interests', { mode: 'json' })
+      .$type<string[]>()
+      .notNull(),
+    topInterest: text('top_interest').notNull(),
+    budget: text('budget').notNull(),
+    buyingDriver: text('buying_driver').notNull(),
+    purchaseIntent: text('purchase_intent').notNull(),
+    productIdea: text('product_idea'),
+    fandom: text('fandom'),
+    name: text('name').notNull(),
+    phone: text('phone').notNull(),
+    marketingConsent: integer('marketing_consent', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    marketingConsentTimestamp: text('marketing_consent_timestamp'),
+    submittedAt: text('submitted_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    redeemed: integer('redeemed', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    redeemedAt: text('redeemed_at'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('idx_survey_claim_code').on(t.claimCode),
+    uniqueIndex('idx_survey_phone').on(t.phone),
+    index('idx_survey_submitted_at').on(t.submittedAt),
+    index('idx_survey_redeemed').on(t.redeemed),
+    index('idx_survey_segments').on(
+      t.topInterest,
+      t.budget,
+      t.purchaseIntent,
+      t.marketingConsent,
+    ),
+  ],
 );

@@ -19,6 +19,7 @@ import {
   Users,
   Wifi,
   Palette,
+  ClipboardList,
 } from 'lucide-react';
 import { formatMoney } from '@/lib/services/pricing';
 import { AdminProducts } from '@/components/admin-products';
@@ -29,6 +30,7 @@ import { ReportsAdmin } from './reports-admin';
 import { ReviewsAdmin } from './reviews-admin';
 import { AdminOverview } from './admin-overview';
 import { AdminOrders } from './admin-orders';
+import { SurveysAdmin } from './surveys-admin';
 import { EmptyWork } from './workflow-ui';
 import {
   OrderSoundButton,
@@ -46,6 +48,7 @@ type View =
   | 'quotes'
   | 'reports'
   | 'reviews'
+  | 'surveys'
   | 'settings';
 const links: [View, string, typeof LayoutDashboard][] = [
   ['overview', 'Overview', LayoutDashboard],
@@ -55,6 +58,7 @@ const links: [View, string, typeof LayoutDashboard][] = [
   ['quotes', 'Custom requests', MessageSquare],
   ['reports', 'Profit & analytics', BarChart3],
   ['reviews', 'Verified reviews', MessageSquare],
+  ['surveys', 'Surveys', ClipboardList],
   ['products', 'Products', Boxes],
   ['finishes', 'Finishes & Colours', Palette],
   ['customers', 'Customers', Users],
@@ -1693,6 +1697,8 @@ export function AdminApp({ view = 'overview' }: { view?: View }) {
         <ReportsAdmin data={data} reload={load} />
       ) : view === 'reviews' ? (
         <ReviewsAdmin data={data} reload={load} />
+      ) : view === 'surveys' ? (
+        <SurveysAdmin data={data} reload={load} />
       ) : view === 'customers' ? (
         <Customers data={data} />
       ) : view === 'conversations' ? (

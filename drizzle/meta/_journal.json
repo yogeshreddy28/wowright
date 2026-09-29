@@ -134,6 +134,34 @@
       "when": 1789132033827,
       "tag": "0018_location_accuracy",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1789200000000,
+      "tag": "0019_admin_assisted_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1789471800000,
+      "tag": "0020_configurable_product_sizing",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1789632000000,
+      "tag": "0021_fixed_product_sizes",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1790674200000,
+      "tag": "0022_college_product_survey",
+      "breakpoints": true
     }
   ]
 }
