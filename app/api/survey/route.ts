@@ -36,6 +36,16 @@ function duplicateResponse(existing: ExistingClaim, input: { name: string; colle
   });
 }
 
+export async function GET() {
+  try {
+    await ensureCollegeSurveySchema(env.DB);
+    await env.DB.prepare('SELECT 1 FROM survey_responses LIMIT 1').first();
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    return safeError(error, 'The survey is temporarily unavailable.');
+  }
+}
+
 export async function POST(request: Request) {
   try {
     sameOrigin(request);

@@ -15,7 +15,7 @@ vi.mock('@/lib/admin-auth', () => ({
   verifyAdmin: async () => state.adminAllowed,
 }));
 
-import { POST as submitSurvey } from '@/app/api/survey/route';
+import { GET as surveyHealth, POST as submitSurvey } from '@/app/api/survey/route';
 import {
   GET as getSurveys,
   POST as redeemSurvey,
@@ -59,6 +59,13 @@ function post(path: string, body: unknown) {
 }
 
 describe('college product survey', () => {
+  it('initializes and verifies the survey table without creating a response', async () => {
+    expect((await surveyHealth()).status).toBe(204);
+    expect(
+      database.sqlite.prepare('SELECT COUNT(*) count FROM survey_responses').get(),
+    ).toEqual({ count: 0 });
+  });
+
   it('validates required answers and Indian mobiles', () => {
     expect(collegeSurveySchema.safeParse({}).success).toBe(false);
     expect(() => normalizeCollegeSurvey({ ...valid, phone: '12345' })).toThrow(
