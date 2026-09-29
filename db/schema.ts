@@ -1195,3 +1195,148 @@ export const surveyResponses = sqliteTable(
     ),
   ],
 );
+
+export const retailShops = sqliteTable(
+  'retail_shops',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    phone: text('phone').notNull(),
+    address: text('address').notNull(),
+    locality: text('locality'),
+    city: text('city').notNull().default('Bengaluru'),
+    state: text('state').notNull().default('Karnataka'),
+    pinCode: text('pin_code').notNull(),
+    latitude: real('latitude'),
+    longitude: real('longitude'),
+    active: integer('active', { mode: 'boolean' }).notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('idx_retail_shops_phone').on(t.phone),
+    index('idx_retail_shops_active_name').on(t.active, t.name),
+  ],
+);
+
+export const fieldWorkSessions = sqliteTable(
+  'field_work_sessions',
+  {
+    id: text('id').primaryKey(),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    startedAt: text('started_at').notNull(),
+    endedAt: text('ended_at'),
+    status: text('status').notNull().default('active'),
+    distanceMetres: real('distance_metres').notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [index('idx_field_sessions_employee_date').on(t.employeeId, t.startedAt)],
+);
+
+export const fieldLocationPoints = sqliteTable(
+  'field_location_points',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => fieldWorkSessions.id, { onDelete: 'cascade' }),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    latitude: real('latitude').notNull(),
+    longitude: real('longitude').notNull(),
+    accuracyMetres: real('accuracy_metres'),
+    recordedAt: text('recorded_at').notNull(),
+  },
+  (t) => [index('idx_field_points_session_time').on(t.sessionId, t.recordedAt)],
+);
+
+export const shopVisits = sqliteTable(
+  'shop_visits',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => fieldWorkSessions.id, { onDelete: 'cascade' }),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    shopId: text('shop_id')
+      .notNull()
+      .references(() => retailShops.id),
+    checkedInAt: text('checked_in_at').notNull(),
+    latitude: real('latitude').notNull(),
+    longitude: real('longitude').notNull(),
+    accuracyMetres: real('accuracy_metres'),
+    distanceFromShopMetres: real('distance_from_shop_metres'),
+    requiresReview: integer('requires_review', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    outcome: text('outcome').notNull().default('checked_in'),
+    noOrderReason: text('no_order_reason'),
+    ...timestamps,
+  },
+  (t) => [
+    index('idx_shop_visits_employee_date').on(t.employeeId, t.checkedInAt),
+    index('idx_shop_visits_shop_date').on(t.shopId, t.checkedInAt),
+  ],
+);
+
+export const retailBookings = sqliteTable(
+  'retail_bookings',
+  {
+    id: text('id').primaryKey(),
+    bookingNumber: text('booking_number').notNull(),
+    shopId: text('shop_id')
+      .notNull()
+      .references(() => retailShops.id),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => deliveryPeople.id),
+    visitId: text('visit_id')
+      .notNull()
+      .references(() => shopVisits.id),
+    status: text('status').notNull().default('booked'),
+    paymentTerms: text('payment_terms').notNull().default('payable_on_delivery'),
+    paymentStatus: text('payment_status').notNull().default('unpaid'),
+    totalQuantity: integer('total_quantity').notNull(),
+    totalAmount: integer('total_amount').notNull(),
+    bookedAt: text('booked_at').notNull(),
+    approvedAt: text('approved_at'),
+    deliveredAt: text('delivered_at'),
+    paidAt: text('paid_at'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('idx_retail_booking_number').on(t.bookingNumber),
+    uniqueIndex('idx_retail_booking_visit').on(t.visitId),
+    index('idx_retail_bookings_employee_date').on(t.employeeId, t.bookedAt),
+    index('idx_retail_bookings_shop_date').on(t.shopId, t.bookedAt),
+  ],
+);
+
+export const retailBookingItems = sqliteTable(
+  'retail_booking_items',
+  {
+    id: text('id').primaryKey(),
+    bookingId: text('booking_id')
+      .notNull()
+      .references(() => retailBookings.id, { onDelete: 'cascade' }),
+    productId: text('product_id')
+      .notNull()
+      .references(() => products.id),
+    variantId: text('variant_id').references(() => productVariants.id),
+    productName: text('product_name').notNull(),
+    variantName: text('variant_name').notNull(),
+    sku: text('sku'),
+    imageUrl: text('image_url'),
+    quantity: integer('quantity').notNull(),
+    unitPrice: integer('unit_price').notNull(),
+    lineTotal: integer('line_total').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (t) => [index('idx_retail_booking_items_booking').on(t.bookingId)],
+);

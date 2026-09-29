@@ -11,6 +11,7 @@ import {
   Truck,
   Camera,
   Wallet,
+  Store,
 } from 'lucide-react';
 import { formatMoney } from '@/lib/services/pricing';
 import { localDate } from '@/lib/services/production';
@@ -192,6 +193,9 @@ export function DeliveryView() {
           <Truck size={17} />
           Delivery team
         </span>
+        <Link className="button secondary" href="/field">
+          <Store size={17} /> Retail bookings
+        </Link>
       </header>
       {error && (
         <div role="alert" className="ux-screen-feedback error">

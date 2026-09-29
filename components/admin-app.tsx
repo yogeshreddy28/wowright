@@ -20,6 +20,7 @@ import {
   Wifi,
   Palette,
   ClipboardList,
+  MapPinned,
 } from 'lucide-react';
 import { formatMoney } from '@/lib/services/pricing';
 import { AdminProducts } from '@/components/admin-products';
@@ -31,6 +32,7 @@ import { ReviewsAdmin } from './reviews-admin';
 import { AdminOverview } from './admin-overview';
 import { AdminOrders } from './admin-orders';
 import { SurveysAdmin } from './surveys-admin';
+import { FieldAdmin } from './field-admin';
 import { EmptyWork } from './workflow-ui';
 import {
   OrderSoundButton,
@@ -49,6 +51,7 @@ type View =
   | 'reports'
   | 'reviews'
   | 'surveys'
+  | 'field'
   | 'settings';
 const links: [View, string, typeof LayoutDashboard][] = [
   ['overview', 'Overview', LayoutDashboard],
@@ -59,6 +62,7 @@ const links: [View, string, typeof LayoutDashboard][] = [
   ['reports', 'Profit & analytics', BarChart3],
   ['reviews', 'Verified reviews', MessageSquare],
   ['surveys', 'Surveys', ClipboardList],
+  ['field', 'Field bookings', MapPinned],
   ['products', 'Products', Boxes],
   ['finishes', 'Finishes & Colours', Palette],
   ['customers', 'Customers', Users],
@@ -1699,6 +1703,8 @@ export function AdminApp({ view = 'overview' }: { view?: View }) {
         <ReviewsAdmin data={data} reload={load} />
       ) : view === 'surveys' ? (
         <SurveysAdmin data={data} reload={load} />
+      ) : view === 'field' ? (
+        <FieldAdmin data={data} reload={load} />
       ) : view === 'customers' ? (
         <Customers data={data} />
       ) : view === 'conversations' ? (
