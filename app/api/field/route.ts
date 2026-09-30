@@ -1,9 +1,14 @@
 import { env } from 'cloudflare:workers';
 import { z } from 'zod';
 import { deliveryPerson } from '@/lib/delivery-auth';
-import { sameOrigin, safeError, CommerceError } from '@/lib/services/launch-rules';
+import {
+  sameOrigin,
+  safeError,
+  CommerceError,
+} from '@/lib/services/launch-rules';
 import {
   distanceMetres,
+  ensureFieldBookingSchema,
   fieldBookingNumber,
   fieldLocationSchema,
   noOrderReasons,
@@ -35,8 +40,10 @@ async function createBookingNumber(db: D1Database) {
 }
 
 export async function GET(request: Request) {
+  await ensureFieldBookingSchema(env.DB);
   const employee = await deliveryPerson(request, env.DB);
-  if (!employee) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!employee)
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const session = await activeSession(env.DB, employee.id);
     const [shops, products, variants, visits, bookings] = await env.DB.batch([
@@ -47,7 +54,8 @@ export async function GET(request: Request) {
       env.DB.prepare(`SELECT p.id,p.name,p.category,p.base_price,p.tags,
         COALESCE((SELECT '/api/product-images/'||i.id FROM product_images i WHERE i.product_id=p.id ORDER BY CASE i.role WHEN 'main' THEN 0 ELSE 1 END,i.sort_order LIMIT 1),json_extract(p.images,'$[0]')) image
         FROM products p WHERE p.active=1 AND p.publishing_status='published' AND p.availability='available' ORDER BY p.name`),
-      env.DB.prepare(`SELECT v.id,v.product_id,COALESCE(f.name,v.name) name,v.sku,
+      env.DB
+        .prepare(`SELECT v.id,v.product_id,COALESCE(f.name,v.name) name,v.sku,
         COALESCE(v.selling_price,p.base_price+COALESCE(v.price_adjustment,0)) price,
         COALESCE((SELECT '/api/product-images/'||i.id FROM product_images i WHERE i.id=v.exact_image_id),(SELECT '/api/product-images/'||i.id FROM product_variant_images vi JOIN product_images i ON i.id=vi.image_id WHERE vi.variant_id=v.id ORDER BY vi.sort_order LIMIT 1)) image
         FROM product_variants v JOIN products p ON p.id=v.product_id LEFT JOIN global_finishes f ON f.id=v.finish_id
@@ -58,7 +66,9 @@ export async function GET(request: Request) {
       ).bind(employee.id),
       env.DB.prepare(`SELECT b.*,s.name shop_name,
         (SELECT json_group_array(json_object('productName',i.product_name,'variantName',i.variant_name,'quantity',i.quantity,'unitPrice',i.unit_price,'lineTotal',i.line_total)) FROM retail_booking_items i WHERE i.booking_id=b.id) items
-        FROM retail_bookings b JOIN retail_shops s ON s.id=b.shop_id WHERE b.employee_id=? ORDER BY b.booked_at DESC LIMIT 30`).bind(employee.id),
+        FROM retail_bookings b JOIN retail_shops s ON s.id=b.shop_id WHERE b.employee_id=? ORDER BY b.booked_at DESC LIMIT 30`).bind(
+        employee.id,
+      ),
     ]);
     const variantRows = variants.results as Row[];
     return Response.json({
@@ -99,14 +109,24 @@ export async function GET(request: Request) {
 }
 
 const actionSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('start_day'), location: fieldLocationSchema.optional() }),
-  z.object({ action: z.literal('end_day'), location: fieldLocationSchema.optional() }),
+  z.object({
+    action: z.literal('start_day'),
+    location: fieldLocationSchema.optional(),
+  }),
+  z.object({
+    action: z.literal('end_day'),
+    location: fieldLocationSchema.optional(),
+  }),
   z.object({
     action: z.literal('track_point'),
     location: fieldLocationSchema,
     recordedAt: z.string().datetime().optional(),
   }),
-  z.object({ action: z.literal('check_in'), shopId: z.string().min(1), location: fieldLocationSchema }),
+  z.object({
+    action: z.literal('check_in'),
+    shopId: z.string().min(1),
+    location: fieldLocationSchema,
+  }),
   z.object({
     action: z.literal('no_order'),
     visitId: z.string().min(1),
@@ -168,8 +188,10 @@ async function savePoint(
 }
 
 export async function POST(request: Request) {
+  await ensureFieldBookingSchema(env.DB);
   const employee = await deliveryPerson(request, env.DB);
-  if (!employee) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!employee)
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     sameOrigin(request);
     const input = actionSchema.parse(await request.json());
@@ -184,7 +206,8 @@ export async function POST(request: Request) {
       )
         .bind(session.id, employee.id, now, now, now)
         .run();
-      if (input.location) await savePoint(env.DB, session, employee.id, input.location, now);
+      if (input.location)
+        await savePoint(env.DB, session, employee.id, input.location, now);
       return Response.json({ ok: true, sessionId: session.id });
     }
     if (!session) throw new CommerceError('Start your field day first.');
@@ -193,14 +216,22 @@ export async function POST(request: Request) {
       const recordedAt = input.recordedAt || now;
       if (Math.abs(Date.now() - Date.parse(recordedAt)) > 10 * 60_000)
         throw new CommerceError('Location point is too old.');
-      return Response.json({ saved: await savePoint(env.DB, session, employee.id, input.location, recordedAt) });
+      return Response.json({
+        saved: await savePoint(
+          env.DB,
+          session,
+          employee.id,
+          input.location,
+          recordedAt,
+        ),
+      });
     }
     if (input.action === 'end_day') {
-      if (input.location) await savePoint(env.DB, session, employee.id, input.location, now);
-      const points = await env.DB
-        .prepare(
-          'SELECT latitude,longitude FROM field_location_points WHERE session_id=? ORDER BY recorded_at',
-        )
+      if (input.location)
+        await savePoint(env.DB, session, employee.id, input.location, now);
+      const points = await env.DB.prepare(
+        'SELECT latitude,longitude FROM field_location_points WHERE session_id=? ORDER BY recorded_at',
+      )
         .bind(session.id)
         .all<{ latitude: number; longitude: number }>();
       const travelled = routeDistance(points.results);
@@ -212,8 +243,9 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, distanceMetres: travelled });
     }
     if (input.action === 'check_in') {
-      const shop = await env.DB
-        .prepare('SELECT * FROM retail_shops WHERE id=? AND active=1')
+      const shop = await env.DB.prepare(
+        'SELECT * FROM retail_shops WHERE id=? AND active=1',
+      )
         .bind(input.shopId)
         .first<Row>();
       if (!shop) throw new CommerceError('Shop is unavailable.', 404);
@@ -254,15 +286,19 @@ export async function POST(request: Request) {
           now,
         ),
       ]);
-      return Response.json({ visitId: id, distanceMetres: distance, requiresReview: distance != null && distance > 250 });
+      return Response.json({
+        visitId: id,
+        distanceMetres: distance,
+        requiresReview: distance != null && distance > 250,
+      });
     }
-    const visit = await env.DB
-      .prepare(
-        "SELECT * FROM shop_visits WHERE id=? AND employee_id=? AND session_id=? AND outcome='checked_in'",
-      )
+    const visit = await env.DB.prepare(
+      "SELECT * FROM shop_visits WHERE id=? AND employee_id=? AND session_id=? AND outcome='checked_in'",
+    )
       .bind(input.visitId, employee.id, session.id)
       .first<Row>();
-    if (!visit) throw new CommerceError('Check in again before saving this visit.');
+    if (!visit)
+      throw new CommerceError('Check in again before saving this visit.');
     if (input.action === 'no_order') {
       await env.DB.prepare(
         "UPDATE shop_visits SET outcome='no_order',no_order_reason=?,updated_at=? WHERE id=?",
@@ -292,11 +328,16 @@ export async function POST(request: Request) {
     const items = catalogRows.map((result, index) => {
       const row = result.results[0] as Row | undefined;
       const requested = input.lines[index];
-      if (!row || (requested.variantId && row.variant_id !== requested.variantId))
+      if (
+        !row ||
+        (requested.variantId && row.variant_id !== requested.variantId)
+      )
         throw new CommerceError('A selected product or colour is unavailable.');
       const price = Number(row.unit_price);
       if (!Number.isSafeInteger(price) || price <= 0)
-        throw new CommerceError('A selected product does not have a valid fixed price.');
+        throw new CommerceError(
+          'A selected product does not have a valid fixed price.',
+        );
       return {
         ...row,
         quantity: requested.quantity,

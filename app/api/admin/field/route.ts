@@ -11,14 +11,17 @@ import {
 import {
   assertBookingStatusTransition,
   bookingStatuses,
+  ensureFieldBookingSchema,
 } from '@/lib/services/field-booking';
 
 export async function GET(request: Request) {
+  await ensureFieldBookingSchema(env.DB);
   if (!(await verifyAdmin(request)))
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const [days, visits, bookings, shops] = await env.DB.batch([
-      env.DB.prepare(`SELECT s.id,s.employee_id,p.name employee_name,s.started_at,s.ended_at,s.status,s.distance_metres,
+      env.DB
+        .prepare(`SELECT s.id,s.employee_id,p.name employee_name,s.started_at,s.ended_at,s.status,s.distance_metres,
         (SELECT COUNT(*) FROM shop_visits v WHERE v.session_id=s.id) shops_visited,
         (SELECT COUNT(*) FROM retail_bookings b WHERE b.employee_id=s.employee_id AND b.booked_at>=s.started_at AND (s.ended_at IS NULL OR b.booked_at<=s.ended_at)) bookings,
         (SELECT COUNT(*) FROM shop_visits v WHERE v.session_id=s.id AND v.outcome='no_order') no_orders,
@@ -55,7 +58,10 @@ const actionSchema = z.discriminatedUnion('action', [
     locality: z.string().trim().max(100).optional().default(''),
     city: z.string().trim().min(2).max(80).default('Bengaluru'),
     state: z.string().trim().min(2).max(80).default('Karnataka'),
-    pinCode: z.string().trim().regex(/^560\d{3}$/),
+    pinCode: z
+      .string()
+      .trim()
+      .regex(/^560\d{3}$/),
     latitude: z.number().finite().min(-90).max(90).nullable().optional(),
     longitude: z.number().finite().min(-180).max(180).nullable().optional(),
   }),
@@ -67,6 +73,7 @@ const actionSchema = z.discriminatedUnion('action', [
 ]);
 
 export async function POST(request: Request) {
+  await ensureFieldBookingSchema(env.DB);
   if (!(await verifyAdmin(request)))
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   try {
@@ -85,12 +92,16 @@ export async function POST(request: Request) {
           latitude: input.latitude,
           longitude: input.longitude,
         });
-      const existing = await env.DB
-        .prepare('SELECT id FROM retail_shops WHERE phone=?')
+      const existing = await env.DB.prepare(
+        'SELECT id FROM retail_shops WHERE phone=?',
+      )
         .bind(phone)
         .first();
       if (existing)
-        throw new CommerceError('A registered shop already uses this phone number.', 409);
+        throw new CommerceError(
+          'A registered shop already uses this phone number.',
+          409,
+        );
       await env.DB.prepare(
         'INSERT INTO retail_shops (id,name,phone,address,locality,city,state,pin_code,latitude,longitude,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
       )
@@ -111,8 +122,9 @@ export async function POST(request: Request) {
         .run();
       return Response.json({ ok: true });
     }
-    const booking = await env.DB
-      .prepare('SELECT status FROM retail_bookings WHERE id=?')
+    const booking = await env.DB.prepare(
+      'SELECT status FROM retail_bookings WHERE id=?',
+    )
       .bind(input.bookingId)
       .first<{ status: string }>();
     if (!booking) throw new CommerceError('Booking not found.', 404);
